@@ -1,35 +1,35 @@
 /* global __filename, TransformStream */
 
-import { getLogger } from 'jitsi-meet-logger';
+// import { getLogger } from 'jitsi-meet-logger';
 
-const logger = getLogger(__filename);
+// const logger = getLogger(__filename);
 
-// We use a ringbuffer of keys so we can change them and still decode packets that were
-// encrypted with an old key.
-// In the future when we dont rely on a globally shared key we will actually use it. For
-// now set the size to 1 which means there is only a single key. This causes some
-// glitches when changing the key but its ok.
-const keyRingSize = 1;
+// // We use a ringbuffer of keys so we can change them and still decode packets that were
+// // encrypted with an old key.
+// // In the future when we dont rely on a globally shared key we will actually use it. For
+// // now set the size to 1 which means there is only a single key. This causes some
+// // glitches when changing the key but its ok.
+// const keyRingSize = 1;
 
-// We use a 96 bit IV for AES GCM. This is signalled in plain together with the
-// packet. See https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams
-const ivLength = 12;
+// // We use a 96 bit IV for AES GCM. This is signalled in plain together with the
+// // packet. See https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams
+// const ivLength = 12;
 
-// We copy the first bytes of the VP8 payload unencrypted.
-// For keyframes this is 10 bytes, for non-keyframes (delta) 3. See
-//   https://tools.ietf.org/html/rfc6386#section-9.1
-// This allows the bridge to continue detecting keyframes (only one byte needed in the JVB)
-// and is also a bit easier for the VP8 decoder (i.e. it generates funny garbage pictures
-// instead of being unable to decode).
-// This is a bit for show and we might want to reduce to 1 unconditionally in the final version.
-//
-// For audio (where frame.type is not set) we do not encrypt the opus TOC byte:
-//   https://tools.ietf.org/html/rfc6716#section-3.1
-const unencryptedBytes = {
-    key: 10,
-    delta: 3,
-    undefined: 1 // frame.type is not set on audio
-};
+// // We copy the first bytes of the VP8 payload unencrypted.
+// // For keyframes this is 10 bytes, for non-keyframes (delta) 3. See
+// //   https://tools.ietf.org/html/rfc6386#section-9.1
+// // This allows the bridge to continue detecting keyframes (only one byte needed in the JVB)
+// // and is also a bit easier for the VP8 decoder (i.e. it generates funny garbage pictures
+// // instead of being unable to decode).
+// // This is a bit for show and we might want to reduce to 1 unconditionally in the final version.
+// //
+// // For audio (where frame.type is not set) we do not encrypt the opus TOC byte:
+// //   https://tools.ietf.org/html/rfc6716#section-3.1
+// const unencryptedBytes = {
+//     key: 10,
+//     delta: 3,
+//     undefined: 1 // frame.type is not set on audio
+// };
 
 
 /**
@@ -59,20 +59,20 @@ export default class E2EEcontext {
     constructor(options) {
         this._options = options;
 
-        // An array (ring) of keys that we use for sending and receiving.
-        this._cryptoKeyRing = new Array(keyRingSize);
+        // // An array (ring) of keys that we use for sending and receiving.
+        // this._cryptoKeyRing = new Array(keyRingSize);
 
-        // A pointer to the currently used key.
-        this._currentKeyIndex = -1;
+        // // A pointer to the currently used key.
+        // this._currentKeyIndex = -1;
 
-        // We keep track of how many frames we have sent per ssrc.
-        // Starts with a random offset similar to the RTP sequence number.
-        this._sendCounts = new Map();
+        // // We keep track of how many frames we have sent per ssrc.
+        // // Starts with a random offset similar to the RTP sequence number.
+        // this._sendCounts = new Map();
 
-        // Initialize the salt and convert it once.
-        const encoder = new TextEncoder();
+        // // Initialize the salt and convert it once.
+        // const encoder = new TextEncoder();
 
-        this._salt = encoder.encode(options.salt);
+        // this._salt = encoder.encode(options.salt);
     }
 
     /**
@@ -85,13 +85,13 @@ export default class E2EEcontext {
     handleReceiver(receiver, kind) {
         const receiverStreams
             = kind === 'video' ? receiver.createEncodedVideoStreams() : receiver.createEncodedAudioStreams();
-        const transform = new TransformStream({
-            transform: this._decodeFunction.bind(this)
-        });
+        // const transform = new TransformStream({
+        //     transform: this._decodeFunction.bind(this)
+        // });
 
         receiverStreams.readableStream
-            .pipeThrough(transform)
             .pipeTo(receiverStreams.writableStream);
+            // .pipeThrough(transform)
     }
 
     /**
@@ -104,13 +104,13 @@ export default class E2EEcontext {
     handleSender(sender, kind) {
         const senderStreams
             = kind === 'video' ? sender.createEncodedVideoStreams() : sender.createEncodedAudioStreams();
-        const transform = new TransformStream({
-            transform: this._encodeFunction.bind(this)
-        });
+        // const transform = new TransformStream({
+        //     transform: this._encodeFunction.bind(this)
+        // });
 
         senderStreams.readableStream
-            .pipeThrough(transform)
             .pipeTo(senderStreams.writableStream);
+            // .pipeThrough(transform)
     }
 
     /**
@@ -118,41 +118,41 @@ export default class E2EEcontext {
      *
      * @param {string} value - Value to be used as the new key. May be falsy to disable end-to-end encryption.
      */
-    async setKey(value) {
-        let key;
+    // async setKey(value) {
+    //     let key;
 
-        if (value) {
-            const encoder = new TextEncoder();
+    //     if (value) {
+    //         const encoder = new TextEncoder();
 
-            key = await this._deriveKey(encoder.encode(value));
-        } else {
-            key = false;
-        }
-        this._currentKeyIndex++;
-        this._cryptoKeyRing[this._currentKeyIndex % this._cryptoKeyRing.length] = key;
-    }
+    //         key = await this._deriveKey(encoder.encode(value));
+    //     } else {
+    //         key = false;
+    //     }
+    //     this._currentKeyIndex++;
+    //     this._cryptoKeyRing[this._currentKeyIndex % this._cryptoKeyRing.length] = key;
+    // }
 
     /**
      * Derives a AES-GCM key with 128 bits from the input using PBKDF2
      * The salt is configured in the constructor of this class.
      * @param {Uint8Array} keyBytes - Value to derive key from
      */
-    async _deriveKey(keyBytes) {
-        // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/importKey
-        const material = await crypto.subtle.importKey('raw', keyBytes,
-            'PBKDF2', false, [ 'deriveBits', 'deriveKey' ]);
+    // async _deriveKey(keyBytes) {
+    //     // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/importKey
+    //     const material = await crypto.subtle.importKey('raw', keyBytes,
+    //         'PBKDF2', false, [ 'deriveBits', 'deriveKey' ]);
 
-        // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey#PBKDF2
-        return crypto.subtle.deriveKey({
-            name: 'PBKDF2',
-            salt: this._salt,
-            iterations: 100000,
-            hash: 'SHA-256'
-        }, material, {
-            name: 'AES-GCM',
-            length: 128
-        }, false, [ 'encrypt', 'decrypt' ]);
-    }
+    //     // https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey#PBKDF2
+    //     return crypto.subtle.deriveKey({
+    //         name: 'PBKDF2',
+    //         salt: this._salt,
+    //         iterations: 100000,
+    //         hash: 'SHA-256'
+    //     }, material, {
+    //         name: 'AES-GCM',
+    //         length: 128
+    //     }, false, [ 'encrypt', 'decrypt' ]);
+    // }
 
     /**
      * Construct the IV used for AES-GCM and sent (in plain) with the packet similar to
@@ -173,25 +173,25 @@ export default class E2EEcontext {
      *
      * See also https://developer.mozilla.org/en-US/docs/Web/API/AesGcmParams
      */
-    _makeIV(synchronizationSource, timestamp) {
-        const iv = new ArrayBuffer(ivLength);
-        const ivView = new DataView(iv);
+    // _makeIV(synchronizationSource, timestamp) {
+    //     const iv = new ArrayBuffer(ivLength);
+    //     const ivView = new DataView(iv);
 
-        // having to keep our own send count (similar to a picture id) is not ideal.
-        if (!this._sendCounts.has(synchronizationSource)) {
-            // Initialize with a random offset, similar to the RTP sequence number.
-            this._sendCounts.set(synchronizationSource, Math.floor(Math.random() * 0xFFFF));
-        }
-        const sendCount = this._sendCounts.get(synchronizationSource);
+    //     // having to keep our own send count (similar to a picture id) is not ideal.
+    //     if (!this._sendCounts.has(synchronizationSource)) {
+    //         // Initialize with a random offset, similar to the RTP sequence number.
+    //         this._sendCounts.set(synchronizationSource, Math.floor(Math.random() * 0xFFFF));
+    //     }
+    //     const sendCount = this._sendCounts.get(synchronizationSource);
 
-        ivView.setUint32(0, synchronizationSource);
-        ivView.setUint32(4, timestamp);
-        ivView.setUint32(8, sendCount % 0xFFFF);
+    //     ivView.setUint32(0, synchronizationSource);
+    //     ivView.setUint32(4, timestamp);
+    //     ivView.setUint32(8, sendCount % 0xFFFF);
 
-        this._sendCounts.set(synchronizationSource, sendCount + 1);
+    //     this._sendCounts.set(synchronizationSource, sendCount + 1);
 
-        return iv;
-    }
+    //     return iv;
+    // }
 
     /**
      * Function that will be injected in a stream and will encrypt the given encoded frames.
@@ -223,47 +223,47 @@ export default class E2EEcontext {
      * 8) Append a single byte for the key identifier. TODO: we don't need all the bits.
      * 9) Enqueue the encrypted frame for sending.
      */
-    _encodeFunction(encodedFrame, controller) {
-        const keyIndex = this._currentKeyIndex % this._cryptoKeyRing.length;
+    // _encodeFunction(encodedFrame, controller) {
+    //     const keyIndex = this._currentKeyIndex % this._cryptoKeyRing.length;
 
-        if (this._cryptoKeyRing[keyIndex]) {
-            const iv = this._makeIV(encodedFrame.synchronizationSource, encodedFrame.timestamp);
+    //     if (this._cryptoKeyRing[keyIndex]) {
+    //         const iv = this._makeIV(encodedFrame.synchronizationSource, encodedFrame.timestamp);
 
-            return crypto.subtle.encrypt({
-                name: 'AES-GCM',
-                iv,
-                additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])
-            }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, unencryptedBytes[encodedFrame.type]))
-            .then(cipherText => {
-                const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + cipherText.byteLength
-                    + iv.byteLength + 1);
-                const newUint8 = new Uint8Array(newData);
+    //         return crypto.subtle.encrypt({
+    //             name: 'AES-GCM',
+    //             iv,
+    //             additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])
+    //         }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, unencryptedBytes[encodedFrame.type]))
+    //         .then(cipherText => {
+    //             const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + cipherText.byteLength
+    //                 + iv.byteLength + 1);
+    //             const newUint8 = new Uint8Array(newData);
 
-                newUint8.set(
-                    new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])); // copy first bytes.
-                newUint8.set(
-                    new Uint8Array(cipherText), unencryptedBytes[encodedFrame.type]); // add ciphertext.
-                newUint8.set(
-                    new Uint8Array(iv), unencryptedBytes[encodedFrame.type] + cipherText.byteLength); // append IV.
-                newUint8[unencryptedBytes[encodedFrame.type] + cipherText.byteLength + ivLength]
-                    = keyIndex; // set key index.
+    //             newUint8.set(
+    //                 new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])); // copy first bytes.
+    //             newUint8.set(
+    //                 new Uint8Array(cipherText), unencryptedBytes[encodedFrame.type]); // add ciphertext.
+    //             newUint8.set(
+    //                 new Uint8Array(iv), unencryptedBytes[encodedFrame.type] + cipherText.byteLength); // append IV.
+    //             newUint8[unencryptedBytes[encodedFrame.type] + cipherText.byteLength + ivLength]
+    //                 = keyIndex; // set key index.
 
-                encodedFrame.data = newData;
+    //             encodedFrame.data = newData;
 
-                return controller.enqueue(encodedFrame);
-            }, e => {
-                logger.error(e);
+    //             return controller.enqueue(encodedFrame);
+    //         }, e => {
+    //             logger.error(e);
 
-                // We are not enqueuing the frame here on purpose.
-            });
-        }
+    //             // We are not enqueuing the frame here on purpose.
+    //         });
+    //     }
 
-        /* NOTE WELL:
-         * This will send unencrypted data (only protected by DTLS transport encryption) when no key is configured.
-         * This is ok for demo purposes but should not be done once this becomes more relied upon.
-         */
-        controller.enqueue(encodedFrame);
-    }
+    //     /* NOTE WELL:
+    //      * This will send unencrypted data (only protected by DTLS transport encryption) when no key is configured.
+    //      * This is ok for demo purposes but should not be done once this becomes more relied upon.
+    //      */
+    //     controller.enqueue(encodedFrame);
+    // }
 
     /**
      * Function that will be injected in a stream and will decrypt the given encoded frames.
@@ -284,45 +284,45 @@ export default class E2EEcontext {
      * 6) Append the plaintext to the decrypted frame.
      * 7) Enqueue the decrypted frame for decoding.
      */
-    _decodeFunction(encodedFrame, controller) {
-        const data = new Uint8Array(encodedFrame.data);
-        const keyIndex = data[encodedFrame.data.byteLength - 1];
+    // _decodeFunction(encodedFrame, controller) {
+    //     const data = new Uint8Array(encodedFrame.data);
+    //     const keyIndex = data[encodedFrame.data.byteLength - 1];
 
-        if (this._cryptoKeyRing[keyIndex]) {
-            // TODO: use encodedFrame.type again, see https://bugs.chromium.org/p/chromium/issues/detail?id=1068468
-            const encodedFrameType = encodedFrame.type
-                ? (data[0] & 0x1) === 0 ? 'key' : 'delta' // eslint-disable-line no-bitwise
-                : undefined;
-            const iv = new Uint8Array(encodedFrame.data, encodedFrame.data.byteLength - ivLength - 1, ivLength);
-            const cipherTextStart = unencryptedBytes[encodedFrameType];
-            const cipherTextLength = encodedFrame.data.byteLength - (unencryptedBytes[encodedFrameType] + ivLength + 1);
+    //     if (this._cryptoKeyRing[keyIndex]) {
+    //         // TODO: use encodedFrame.type again, see https://bugs.chromium.org/p/chromium/issues/detail?id=1068468
+    //         const encodedFrameType = encodedFrame.type
+    //             ? (data[0] & 0x1) === 0 ? 'key' : 'delta' // eslint-disable-line no-bitwise
+    //             : undefined;
+    //         const iv = new Uint8Array(encodedFrame.data, encodedFrame.data.byteLength - ivLength - 1, ivLength);
+    //         const cipherTextStart = unencryptedBytes[encodedFrameType];
+    //         const cipherTextLength = encodedFrame.data.byteLength - (unencryptedBytes[encodedFrameType] + ivLength + 1);
 
-            return crypto.subtle.decrypt({
-                name: 'AES-GCM',
-                iv,
-                additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrameType])
-            }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, cipherTextStart, cipherTextLength))
-            .then(plainText => {
-                const newData = new ArrayBuffer(unencryptedBytes[encodedFrameType] + plainText.byteLength);
-                const newUint8 = new Uint8Array(newData);
+    //         return crypto.subtle.decrypt({
+    //             name: 'AES-GCM',
+    //             iv,
+    //             additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrameType])
+    //         }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, cipherTextStart, cipherTextLength))
+    //         .then(plainText => {
+    //             const newData = new ArrayBuffer(unencryptedBytes[encodedFrameType] + plainText.byteLength);
+    //             const newUint8 = new Uint8Array(newData);
 
-                newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrameType]));
-                newUint8.set(new Uint8Array(plainText), unencryptedBytes[encodedFrameType]);
+    //             newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrameType]));
+    //             newUint8.set(new Uint8Array(plainText), unencryptedBytes[encodedFrameType]);
 
-                encodedFrame.data = newData;
+    //             encodedFrame.data = newData;
 
-                return controller.enqueue(encodedFrame);
-            }, e => {
-                logger.error(e);
+    //             return controller.enqueue(encodedFrame);
+    //         }, e => {
+    //             logger.error(e);
 
-                // Just feed the (potentially encrypted) frame in case of error.
-                // Worst case it is garbage.
-                controller.enqueue(encodedFrame);
-            });
-        }
+    //             // Just feed the (potentially encrypted) frame in case of error.
+    //             // Worst case it is garbage.
+    //             controller.enqueue(encodedFrame);
+    //         });
+    //     }
 
-        // TODO: this just passes through to the decoder. Is that ok? If we don't know the key yet
-        // we might want to buffer a bit but it is still unclear how to do that (and for how long etc).
-        controller.enqueue(encodedFrame);
-    }
+    //     // TODO: this just passes through to the decoder. Is that ok? If we don't know the key yet
+    //     // we might want to buffer a bit but it is still unclear how to do that (and for how long etc).
+    //     controller.enqueue(encodedFrame);
+    // }
 }

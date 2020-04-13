@@ -44,12 +44,12 @@ const config = {
                             // Specify our target browsers so no transpiling is
                             // done unnecessarily. For browsers not specified
                             // here, the ES2015+ profile will be used.
-                            targets: {
-                                chrome: 58,
-                                electron: 2,
-                                firefox: 54,
-                                safari: 11
-                            }
+                            // targets: {
+                            //     chrome: 58,
+                            //     electron: 2,
+                            //     firefox: 54,
+                            //     safari: 11
+                            // }
                         }
                     ],
                     '@babel/preset-flow'

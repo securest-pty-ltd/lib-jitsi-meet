@@ -1,5 +1,19 @@
 /* global __filename, TransformStream */
 
+
+  if (!ArrayBuffer.transfer) {
+      ArrayBuffer.transfer = function(source, length) {
+          if (!(source instanceof ArrayBuffer))
+              throw new TypeError('Source must be an instance of ArrayBuffer');
+          if (length <= source.byteLength)
+              return source.slice(0, length);
+          var sourceView = new Uint8Array(source),
+              destView = new Uint8Array(new ArrayBuffer(length));
+          destView.set(sourceView);
+          return destView.buffer;
+      };
+  }
+
 import { getLogger } from 'jitsi-meet-logger';
 
 const logger = getLogger(__filename);
@@ -244,11 +258,15 @@ export default class E2EEcontext {
         if (this._cryptoKeyRing[keyIndex]) {
             const iv = this._makeIV(encodedFrame.synchronizationSource, encodedFrame.timestamp);
 
+            const increasedData =  ArrayBuffer.transfer(encodedFrame.data, encodedFrame.data.byteLength * 2);
+            new Uint8Array(increasedData)[encodedFrame.data.byteLength + 1] = 42;
+            new Uint8Array(increasedData)[encodedFrame.data.byteLength + 2] = 43;
+
             return crypto.subtle.encrypt({
                 name: 'AES-GCM',
                 iv,
                 additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])
-            }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, unencryptedBytes[encodedFrame.type]))
+            }, this._cryptoKeyRing[keyIndex], new Uint8Array(increasedData, unencryptedBytes[encodedFrame.type]))
             .then(cipherText => {
                 const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + cipherText.byteLength
                     + iv.byteLength + 1);
@@ -267,6 +285,7 @@ export default class E2EEcontext {
 
                 return controller.enqueue(encodedFrame);
             }, e => {
+                console.log(e, '_encodeFunction')
                 logger.error(e);
 
                 // We are not enqueuing the frame here on purpose.
@@ -315,16 +334,19 @@ export default class E2EEcontext {
                 additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])
             }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, cipherTextStart, cipherTextLength))
             .then(plainText => {
-                const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + plainText.byteLength);
+                const origData =  ArrayBuffer.transfer(plainText, plainText.byteLength  / 2);
+
+                const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + origData.byteLength);
                 const newUint8 = new Uint8Array(newData);
 
                 newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type]));
-                newUint8.set(new Uint8Array(plainText), unencryptedBytes[encodedFrame.type]);
+                newUint8.set(new Uint8Array(origData), unencryptedBytes[encodedFrame.type]);
 
                 encodedFrame.data = newData;
 
                 return controller.enqueue(encodedFrame);
             }, e => {
+                console.log(e, '_decodeFunction')
                 logger.error(e, encodedFrame.type);
                 if (encodedFrame.type === undefined) { // audio, replace with silence.
                     const newData = new ArrayBuffer(3);
@@ -332,21 +354,23 @@ export default class E2EEcontext {
 
                     newUint8.set([ 0xd8, 0xff, 0xfe ]); // opus silence frame.
                     encodedFrame.data = newData;
-                } else { // video, replace with a 320x180px black frame
-                    const newData = new ArrayBuffer(60);
-                    const newUint8 = new Uint8Array(newData);
-
-                    newUint8.set([
-                        0xb0, 0x05, 0x00, 0x9d, 0x01, 0x2a, 0xa0, 0x00, 0x5a, 0x00, 0x39, 0x03, 0x00, 0x00, 0x1c, 0x22,
-                        0x16, 0x16, 0x22, 0x66, 0x12, 0x20, 0x04, 0x90, 0x40, 0x00, 0xc5, 0x01, 0xe0, 0x7c, 0x4d, 0x2f,
-                        0xfa, 0xdd, 0x4d, 0xa5, 0x7f, 0x89, 0xa5, 0xff, 0x5b, 0xa9, 0xb4, 0xaf, 0xf1, 0x34, 0xbf, 0xeb,
-                        0x75, 0x36, 0x95, 0xfe, 0x26, 0x96, 0x60, 0xfe, 0xff, 0xba, 0xff, 0x40
-                    ]);
-                    encodedFrame.data = newData;
+                    controller.enqueue(encodedFrame);
                 }
+                // } else { // video, replace with a 320x180px black frame
+                //     const newData = new ArrayBuffer(60);
+                //     const newUint8 = new Uint8Array(newData);
 
-                // TODO: notify the application about error status.
-                controller.enqueue(encodedFrame);
+                //     newUint8.set([
+                //         0xb0, 0x05, 0x00, 0x9d, 0x01, 0x2a, 0xa0, 0x00, 0x5a, 0x00, 0x39, 0x03, 0x00, 0x00, 0x1c, 0x22,
+                //         0x16, 0x16, 0x22, 0x66, 0x12, 0x20, 0x04, 0x90, 0x40, 0x00, 0xc5, 0x01, 0xe0, 0x7c, 0x4d, 0x2f,
+                //         0xfa, 0xdd, 0x4d, 0xa5, 0x7f, 0x89, 0xa5, 0xff, 0x5b, 0xa9, 0xb4, 0xaf, 0xf1, 0x34, 0xbf, 0xeb,
+                //         0x75, 0x36, 0x95, 0xfe, 0x26, 0x96, 0x60, 0xfe, 0xff, 0xba, 0xff, 0x40
+                //     ]);
+                //     encodedFrame.data = newData;
+                // }
+
+                // // TODO: notify the application about error status.
+                // controller.enqueue(encodedFrame);
             });
         }
 

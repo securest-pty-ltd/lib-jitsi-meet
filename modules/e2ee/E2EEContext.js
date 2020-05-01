@@ -76,6 +76,9 @@ export default class E2EEcontext {
         const encoder = new TextEncoder();
 
         this._salt = encoder.encode(options.salt);
+
+        this._iv = null;
+        this._aes = null;
     }
 
     /**
@@ -137,14 +140,12 @@ export default class E2EEcontext {
         let key;
 
         if (value) {
-            const encoder = new TextEncoder();
+            const { keyBase64, ivBase64 } = JSON.parse(value);
 
-            key = await this._deriveKey(encoder.encode(value));
-        } else {
-            key = false;
+            const key = sjcl.codec.base64.toBits(keyBase64);
+            this._aes = new sjcl.cipher.aes(key);
+            this._iv = sjcl.codec.base64.toBits(ivBase64);
         }
-        this._currentKeyIndex++;
-        this._cryptoKeyRing[this._currentKeyIndex % this._cryptoKeyRing.length] = key;
     }
 
     /**
@@ -238,46 +239,31 @@ export default class E2EEcontext {
      * 8) Append a single byte for the key identifier. TODO: we don't need all the bits.
      * 9) Enqueue the encrypted frame for sending.
      */
+
+    _encrypt(data) {
+        const dataToEncrypt = sjcl.codec.arrayBuffer.toBits(data);
+        const dataAfterEncryption = sjcl.mode.ccm.encrypt(this._aes, dataToEncrypt, this._iv); // Encrypt with aes/ccm mode
+        return sjcl.codec.arrayBuffer.fromBits(dataAfterEncryption, false);
+      }
+
+     _decrypt(data) {
+        const dataToDecrypt = sjcl.codec.arrayBuffer.toBits(data);
+        const dataAfterDecryption = sjcl.mode.ccm.decrypt(this._aes, dataToDecrypt, this._iv);
+        return sjcl.codec.arrayBuffer.fromBits(dataAfterDecryption, false);
+      }
+
     _encodeFunction(encodedFrame, controller) {
-        const keyIndex = this._currentKeyIndex % this._cryptoKeyRing.length;
+        const dekkoEncryptedData = this._encrypt(
+          encodedFrame.data.slice(unencryptedBytes[encodedFrame.type])
+        );
 
-        if (this._cryptoKeyRing[keyIndex]) {
-            const iv = this._makeIV(encodedFrame.synchronizationSource, encodedFrame.timestamp);
+        const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + dekkoEncryptedData.byteLength);
+        const newUint8 = new Uint8Array(newData);
+        newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])); // copy first bytes.
+        newUint8.set(new Uint8Array(dekkoEncryptedData), unencryptedBytes[encodedFrame.type]); // add ciphertext.
 
-            return crypto.subtle.encrypt({
-                name: 'AES-GCM',
-                iv,
-                additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])
-            }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, unencryptedBytes[encodedFrame.type]))
-            .then(cipherText => {
-                const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + cipherText.byteLength
-                    + iv.byteLength + 1);
-                const newUint8 = new Uint8Array(newData);
-
-                newUint8.set(
-                    new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])); // copy first bytes.
-                newUint8.set(
-                    new Uint8Array(cipherText), unencryptedBytes[encodedFrame.type]); // add ciphertext.
-                newUint8.set(
-                    new Uint8Array(iv), unencryptedBytes[encodedFrame.type] + cipherText.byteLength); // append IV.
-                newUint8[unencryptedBytes[encodedFrame.type] + cipherText.byteLength + ivLength]
-                    = keyIndex; // set key index.
-
-                encodedFrame.data = newData;
-
-                return controller.enqueue(encodedFrame);
-            }, e => {
-                logger.error(e);
-
-                // We are not enqueuing the frame here on purpose.
-            });
-        }
-
-        /* NOTE WELL:
-         * This will send unencrypted data (only protected by DTLS transport encryption) when no key is configured.
-         * This is ok for demo purposes but should not be done once this becomes more relied upon.
-         */
-        controller.enqueue(encodedFrame);
+        encodedFrame.data = newData;
+        return controller.enqueue(encodedFrame);
     }
 
     /**
@@ -300,58 +286,15 @@ export default class E2EEcontext {
      * 7) Enqueue the decrypted frame for decoding.
      */
     _decodeFunction(encodedFrame, controller) {
-        const data = new Uint8Array(encodedFrame.data);
-        const keyIndex = data[encodedFrame.data.byteLength - 1];
+        const dekkoDecryptedData = this._decrypt(
+          encodedFrame.data.slice(unencryptedBytes[encodedFrame.type])
+        );
 
-        if (this._cryptoKeyRing[keyIndex]) {
-            const iv = new Uint8Array(encodedFrame.data, encodedFrame.data.byteLength - ivLength - 1, ivLength);
-            const cipherTextStart = unencryptedBytes[encodedFrame.type];
-            const cipherTextLength = encodedFrame.data.byteLength - (unencryptedBytes[encodedFrame.type]
-                + ivLength + 1);
-
-            return crypto.subtle.decrypt({
-                name: 'AES-GCM',
-                iv,
-                additionalData: new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type])
-            }, this._cryptoKeyRing[keyIndex], new Uint8Array(encodedFrame.data, cipherTextStart, cipherTextLength))
-            .then(plainText => {
-                const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + plainText.byteLength);
-                const newUint8 = new Uint8Array(newData);
-
-                newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type]));
-                newUint8.set(new Uint8Array(plainText), unencryptedBytes[encodedFrame.type]);
-
-                encodedFrame.data = newData;
-
-                return controller.enqueue(encodedFrame);
-            }, e => {
-                logger.error(e, encodedFrame.type);
-                if (encodedFrame.type === undefined) { // audio, replace with silence.
-                    const newData = new ArrayBuffer(3);
-                    const newUint8 = new Uint8Array(newData);
-
-                    newUint8.set([ 0xd8, 0xff, 0xfe ]); // opus silence frame.
-                    encodedFrame.data = newData;
-                } else { // video, replace with a 320x180px black frame
-                    const newData = new ArrayBuffer(60);
-                    const newUint8 = new Uint8Array(newData);
-
-                    newUint8.set([
-                        0xb0, 0x05, 0x00, 0x9d, 0x01, 0x2a, 0xa0, 0x00, 0x5a, 0x00, 0x39, 0x03, 0x00, 0x00, 0x1c, 0x22,
-                        0x16, 0x16, 0x22, 0x66, 0x12, 0x20, 0x04, 0x90, 0x40, 0x00, 0xc5, 0x01, 0xe0, 0x7c, 0x4d, 0x2f,
-                        0xfa, 0xdd, 0x4d, 0xa5, 0x7f, 0x89, 0xa5, 0xff, 0x5b, 0xa9, 0xb4, 0xaf, 0xf1, 0x34, 0xbf, 0xeb,
-                        0x75, 0x36, 0x95, 0xfe, 0x26, 0x96, 0x60, 0xfe, 0xff, 0xba, 0xff, 0x40
-                    ]);
-                    encodedFrame.data = newData;
-                }
-
-                // TODO: notify the application about error status.
-                controller.enqueue(encodedFrame);
-            });
-        }
-
-        // TODO: this just passes through to the decoder. Is that ok? If we don't know the key yet
-        // we might want to buffer a bit but it is still unclear how to do that (and for how long etc).
-        controller.enqueue(encodedFrame);
+        const newData = new ArrayBuffer(unencryptedBytes[encodedFrame.type] + dekkoDecryptedData.byteLength);
+        const newUint8 = new Uint8Array(newData);
+        newUint8.set(new Uint8Array(encodedFrame.data, 0, unencryptedBytes[encodedFrame.type]));
+        newUint8.set(new Uint8Array(dekkoDecryptedData), unencryptedBytes[encodedFrame.type]);
+        encodedFrame.data = newData;
+        return controller.enqueue(encodedFrame);
     }
 }

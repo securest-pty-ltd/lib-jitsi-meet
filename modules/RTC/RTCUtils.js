@@ -905,9 +905,9 @@ class RTCUtils extends Listenable {
             = constraints.optional.filter(
                 c => !c.hasOwnProperty('googSuspendBelowMinBitrate'));
 
-        if (enable) {
-            constraints.optional.push({ googSuspendBelowMinBitrate: 'true' });
-        }
+        // if (enable) {
+        constraints.optional.push({ googSuspendBelowMinBitrate: false });
+        // }
     }
 }
 

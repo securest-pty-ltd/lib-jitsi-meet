@@ -9,8 +9,8 @@ import browser from '../browser';
 import Deferred from '../util/Deferred';
 
 import E2EEContext from './E2EEContext';
-import { OlmAdapter } from './OlmAdapter';
-import { importKey, ratchet } from './crypto-utils';
+// import { OlmAdapter } from './OlmAdapter';
+// import { importKey, ratchet } from './crypto-utils';
 
 const logger = getLogger(__filename);
 
@@ -31,15 +31,15 @@ export class E2EEncryption {
 
         this._conferenceJoined = false;
         this._enabled = false;
-        this._key = undefined;
+        // this._key = undefined;
         this._enabling = undefined;
 
         this._e2eeCtx = new E2EEContext();
-        this._olmAdapter = new OlmAdapter(conference);
+        // this._olmAdapter = new OlmAdapter(conference);
 
         // Debounce key rotation / ratcheting to avoid a storm of messages.
-        this._ratchetKey = debounce(this._ratchetKeyImpl, DEBOUNCE_PERIOD);
-        this._rotateKey = debounce(this._rotateKeyImpl, DEBOUNCE_PERIOD);
+        // this._ratchetKey = debounce(this._ratchetKeyImpl, DEBOUNCE_PERIOD);
+        // this._rotateKey = debounce(this._rotateKeyImpl, DEBOUNCE_PERIOD);
 
         // Participant join / leave operations. Used for key advancement / rotation.
         //
@@ -78,15 +78,17 @@ export class E2EEncryption {
             this._trackMuteChanged.bind(this));
 
         // Olm signalling events.
-        this._olmAdapter.on(
-            OlmAdapter.events.OLM_ID_KEY_READY,
-            this._onOlmIdKeyReady.bind(this));
-        this._olmAdapter.on(
-            OlmAdapter.events.PARTICIPANT_E2EE_CHANNEL_READY,
-            this._onParticipantE2EEChannelReady.bind(this));
-        this._olmAdapter.on(
-            OlmAdapter.events.PARTICIPANT_KEY_UPDATED,
-            this._onParticipantKeyUpdated.bind(this));
+        // this._olmAdapter.on(
+        //     OlmAdapter.events.OLM_ID_KEY_READY,
+        //     this._onOlmIdKeyReady.bind(this));
+        // this._olmAdapter.on(
+        //     OlmAdapter.events.PARTICIPANT_E2EE_CHANNEL_READY,
+        //     this._onParticipantE2EEChannelReady.bind(this));
+        // this._olmAdapter.on(
+        //     OlmAdapter.events.PARTICIPANT_KEY_UPDATED,
+        //     this._onParticipantKeyUpdated.bind(this));
+
+        this.setEnabled(true);
     }
 
     /**
@@ -96,9 +98,10 @@ export class E2EEncryption {
      * @returns {boolean}
      */
     static isSupported(config) {
-        return browser.supportsInsertableStreams()
-            && OlmAdapter.isSupported()
-            && !(config.testing && config.testing.disableE2EE);
+        // return browser.supportsInsertableStreams()
+        //     && OlmAdapter.isSupported()
+        //     && !(config.testing && config.testing.disableE2EE);
+        return true;
     }
 
     /**
@@ -128,12 +131,12 @@ export class E2EEncryption {
         this._enabled = enabled;
 
         if (enabled) {
-            await this._olmAdapter.initSessions();
+            // await this._olmAdapter.initSessions();
         } else {
             for (const participant of this.conference.getParticipants()) {
                 this._e2eeCtx.cleanup(participant.getId());
             }
-            this._olmAdapter.clearAllParticipantsSessions();
+            // this._olmAdapter.clearAllParticipantsSessions();
         }
 
         this.conference.setLocalParticipantProperty('e2ee.enabled', enabled);
@@ -141,13 +144,13 @@ export class E2EEncryption {
         this.conference._restartMediaSessions();
 
         // Generate a random key in case we are enabling.
-        this._key = enabled ? this._generateKey() : false;
+        // this._key = enabled ? this._generateKey() : false;
 
         // Send it to others using the E2EE olm channel.
-        const index = await this._olmAdapter.updateKey(this._key);
+        // const index = await this._olmAdapter.updateKey(this._key);
 
         // Set our key so we begin encrypting.
-        this._e2eeCtx.setKey(this.conference.myUserId(), this._key, index);
+        // this._e2eeCtx.setKey(this.conference.myUserId(), this._key, index);
 
         this._enabling.resolve();
     }
@@ -191,10 +194,10 @@ export class E2EEncryption {
      * @private
      */
     _onOlmIdKeyReady(idKey) {
-        logger.debug(`Olm id key ready: ${idKey}`);
+        // logger.debug(`Olm id key ready: ${idKey}`);
 
-        // Publish it in presence.
-        this.conference.setLocalParticipantProperty('e2ee.idKey', idKey);
+        // // Publish it in presence.
+        // this.conference.setLocalParticipantProperty('e2ee.idKey', idKey);
     }
 
     /**
@@ -202,9 +205,9 @@ export class E2EEncryption {
      * @private
      */
     _onParticipantJoined() {
-        if (this._conferenceJoined && this._enabled) {
-            this._ratchetKey();
-        }
+        // if (this._conferenceJoined && this._enabled) {
+        //     this._ratchetKey();
+        // }
     }
 
     /**
@@ -212,11 +215,11 @@ export class E2EEncryption {
      * @private
      */
     _onParticipantLeft(id) {
-        this._e2eeCtx.cleanup(id);
+        // this._e2eeCtx.cleanup(id);
 
-        if (this._enabled) {
-            this._rotateKey();
-        }
+        // if (this._enabled) {
+        //     this._rotateKey();
+        // }
     }
 
     /**
@@ -224,7 +227,7 @@ export class E2EEncryption {
      * @private
      */
     _onParticipantE2EEChannelReady(id) {
-        logger.debug(`E2EE channel with participant ${id} is ready`);
+        // logger.debug(`E2EE channel with participant ${id} is ready`);
     }
 
     /**
@@ -236,9 +239,9 @@ export class E2EEncryption {
      * @private
      */
     _onParticipantKeyUpdated(id, key, index) {
-        logger.debug(`Participant ${id} updated their key`);
+        // logger.debug(`Participant ${id} updated their key`);
 
-        this._e2eeCtx.setKey(id, key, index);
+        // this._e2eeCtx.setKey(id, key, index);
     }
 
     /**
@@ -251,18 +254,18 @@ export class E2EEncryption {
      * @private
      */
     async _onParticipantPropertyChanged(participant, name, oldValue, newValue) {
-        switch (name) {
-        case 'e2ee.idKey':
-            logger.debug(`Participant ${participant.getId()} updated their id key: ${newValue}`);
-            break;
-        case 'e2ee.enabled':
-            if (!newValue && this._enabled) {
-                this._olmAdapter.clearParticipantSession(participant);
+        // switch (name) {
+        // case 'e2ee.idKey':
+        //     logger.debug(`Participant ${participant.getId()} updated their id key: ${newValue}`);
+        //     break;
+        // case 'e2ee.enabled':
+        //     if (!newValue && this._enabled) {
+        //         this._olmAdapter.clearParticipantSession(participant);
 
-                this._rotateKey();
-            }
-            break;
-        }
+        //         this._rotateKey();
+        //     }
+        //     break;
+        // }
     }
 
     /**
@@ -271,16 +274,16 @@ export class E2EEncryption {
      * @private
      */
     async _ratchetKeyImpl() {
-        logger.debug('Ratchetting key');
+        // logger.debug('Ratchetting key');
 
-        const material = await importKey(this._key);
-        const newKey = await ratchet(material);
+        // const material = await importKey(this._key);
+        // const newKey = await ratchet(material);
 
-        this._key = new Uint8Array(newKey);
+        // this._key = new Uint8Array(newKey);
 
-        const index = this._olmAdapter.updateCurrentKey(this._key);
+        // const index = this._olmAdapter.updateCurrentKey(this._key);
 
-        this._e2eeCtx.setKey(this.conference.myUserId(), this._key, index);
+        // this._e2eeCtx.setKey(this.conference.myUserId(), this._key, index);
     }
 
     /**
@@ -290,12 +293,12 @@ export class E2EEncryption {
      * @private
      */
     async _rotateKeyImpl() {
-        logger.debug('Rotating key');
+        // logger.debug('Rotating key');
 
-        this._key = this._generateKey();
-        const index = await this._olmAdapter.updateKey(this._key);
+        // this._key = this._generateKey();
+        // const index = await this._olmAdapter.updateKey(this._key);
 
-        this._e2eeCtx.setKey(this.conference.myUserId(), this._key, index);
+        // this._e2eeCtx.setKey(this.conference.myUserId(), this._key, index);
     }
 
     /**

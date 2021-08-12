@@ -461,12 +461,12 @@ export default class RTC extends Listenable {
     createPeerConnection(signaling, iceConfig, isP2P, options) {
         const pcConstraints = JSON.parse(JSON.stringify(RTCUtils.pcConstraints));
 
-        if (typeof options.abtestSuspendVideo !== 'undefined') {
-            RTCUtils.setSuspendVideo(pcConstraints, options.abtestSuspendVideo);
+        // if (typeof options.abtestSuspendVideo !== 'undefined') {
+        RTCUtils.setSuspendVideo(pcConstraints, false);
 
-            Statistics.analytics.addPermanentProperties(
-                { abtestSuspendVideo: options.abtestSuspendVideo });
-        }
+            // Statistics.analytics.addPermanentProperties(
+            //     { abtestSuspendVideo: options.abtestSuspendVideo });
+        // }
 
         // FIXME: We should rename iceConfig to pcConfig.
 

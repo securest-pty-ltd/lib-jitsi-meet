@@ -473,7 +473,10 @@ export default class XmppConnection extends Listenable {
      */
     send(stanza) {
         if (!this.connected) {
-            throw new Error('Not connected');
+          // throw new Error('Not connected');
+          window.dispatchEvent(new Event('DEKKO_STROPHE_DISCONNECTED'));
+          console.error('Strophe Not connected');
+          return;
         }
         this._stropheConn.send(stanza);
     }

@@ -11,10 +11,10 @@ onmessage = async event => {
     const { operation } = event.data;
 
     if (operation === 'encode') {
-        const { readableStream, writableStream, participantId } = event.data;
+        const { readableStream, writableStream, participantId, dekkoIv, dekkoKey } = event.data;
 
         if (!contexts.has(participantId)) {
-            contexts.set(participantId, new Context(participantId));
+            contexts.set(participantId, new Context(participantId, dekkoIv, dekkoKey));
         }
         const context = contexts.get(participantId);
         const transformStream = new TransformStream({
@@ -25,10 +25,10 @@ onmessage = async event => {
             .pipeThrough(transformStream)
             .pipeTo(writableStream);
     } else if (operation === 'decode') {
-        const { readableStream, writableStream, participantId } = event.data;
+        const { readableStream, writableStream, participantId, dekkoIv, dekkoKey } = event.data;
 
         if (!contexts.has(participantId)) {
-            contexts.set(participantId, new Context(participantId));
+            contexts.set(participantId, new Context(participantId, dekkoIv, dekkoKey));
         }
         const context = contexts.get(participantId);
         const transformStream = new TransformStream({

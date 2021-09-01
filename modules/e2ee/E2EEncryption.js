@@ -215,7 +215,7 @@ export class E2EEncryption {
      * @private
      */
     _onParticipantLeft(id) {
-        // this._e2eeCtx.cleanup(id);
+        this._e2eeCtx.cleanup(id);
 
         // if (this._enabled) {
         //     this._rotateKey();

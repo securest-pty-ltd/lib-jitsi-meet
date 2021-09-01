@@ -31,6 +31,8 @@ const IV_LENGTH = 12;
 
 const RATCHET_WINDOW_SIZE = 8;
 
+const DOP_LENGTH = 8; // timestamp and synchronizationSource
+
 /**
  * Per-participant context holding the cryptographic keys and
  * encode/decode functions
@@ -39,16 +41,19 @@ export class Context {
     /**
      * @param {string} id - local muc resourcepart
      */
-    constructor(id) {
+    constructor(id, dekkoIv, dekkoKey) {
         // An array (ring) of keys that we use for sending and receiving.
-        this._cryptoKeyRing = new Array(KEYRING_SIZE);
+        // this._cryptoKeyRing = new Array(KEYRING_SIZE);
 
         // A pointer to the currently used key.
-        this._currentKeyIndex = -1;
+        // this._currentKeyIndex = -1;
 
-        this._sendCounts = new Map();
+        // this._sendCounts = new Map();
 
         this._id = id;
+
+        this._dekkoIv = dekkoIv;
+        this._dekkoKey = dekkoKey;
     }
 
     /**
@@ -58,17 +63,17 @@ export class Context {
      * @param {Number} keyIndex
      */
     async setKey(keyBytes, keyIndex) {
-        let newKey;
+        // let newKey;
 
-        if (keyBytes) {
-            const material = await importKey(keyBytes);
+        // if (keyBytes) {
+        //     const material = await importKey(keyBytes);
 
-            newKey = await deriveKeys(material);
-        } else {
-            newKey = false;
-        }
-        this._currentKeyIndex = keyIndex % this._cryptoKeyRing.length;
-        this._setKeys(newKey);
+        //     newKey = await deriveKeys(material);
+        // } else {
+        //     newKey = false;
+        // }
+        // this._currentKeyIndex = keyIndex % this._cryptoKeyRing.length;
+        // this._setKeys(newKey);
     }
 
     /**
@@ -79,12 +84,28 @@ export class Context {
      * @private
      */
     _setKeys(keys, keyIndex = -1) {
-        if (keyIndex >= 0) {
-            this._cryptoKeyRing[keyIndex] = keys;
-        } else {
-            this._cryptoKeyRing[this._currentKeyIndex] = keys;
-        }
-        this._sendCount = BigInt(0); // eslint-disable-line new-cap
+        // if (keyIndex >= 0) {
+        //     this._cryptoKeyRing[keyIndex] = keys;
+        // } else {
+        //     this._cryptoKeyRing[this._currentKeyIndex] = keys;
+        // }
+        // this._sendCount = BigInt(0); // eslint-disable-line new-cap
+    }
+
+    async _digestMessage(iv, timestamp, synchronizationSource) {
+        const timestampBuffer = new Uint32Array([timestamp]).buffer;
+        const synchronizationSourceBuffer = new Uint32Array([synchronizationSource]).buffer;
+
+        const ivTimestampLength = 20; // (12 + 4 + 4) = 20
+        const ivTimestamp = new Uint8Array(ivTimestampLength);
+        ivTimestamp.set(iv, 0);
+        ivTimestamp.set(new Uint8Array(timestampBuffer), 12);
+        ivTimestamp.set(new Uint8Array(synchronizationSourceBuffer), 16);
+
+        const hashBuffer = await crypto.subtle.digest('SHA-256', ivTimestamp.buffer);
+        const keyBuffer = hashBuffer.slice(0, 12); // 12 bytes
+        const keyArray = new Uint8Array(keyBuffer);
+        return keyArray;
     }
 
     /**
@@ -109,65 +130,102 @@ export class Context {
      * 8) Append a single byte for the key identifier.
      * 9) Enqueue the encrypted frame for sending.
      */
-    encodeFunction(encodedFrame, controller) {
-        const keyIndex = this._currentKeyIndex;
+    // encodeFunction(encodedFrame, controller) {
+    //     const keyIndex = this._currentKeyIndex;
 
-        if (this._cryptoKeyRing[keyIndex]) {
-            const iv = this._makeIV(encodedFrame.getMetadata().synchronizationSource, encodedFrame.timestamp);
+    //     if (this._cryptoKeyRing[keyIndex]) {
+    //         const iv = this._makeIV(encodedFrame.getMetadata().synchronizationSource, encodedFrame.timestamp);
 
-            // Thіs is not encrypted and contains the VP8 payload descriptor or the Opus TOC byte.
-            const frameHeader = new Uint8Array(encodedFrame.data, 0, UNENCRYPTED_BYTES[encodedFrame.type]);
+    //         // Thіs is not encrypted and contains the VP8 payload descriptor or the Opus TOC byte.
+    //         const frameHeader = new Uint8Array(encodedFrame.data, 0, UNENCRYPTED_BYTES[encodedFrame.type]);
 
-            // Frame trailer contains the R|IV_LENGTH and key index
-            const frameTrailer = new Uint8Array(2);
+    //         // Frame trailer contains the R|IV_LENGTH and key index
+    //         const frameTrailer = new Uint8Array(2);
 
-            frameTrailer[0] = IV_LENGTH;
-            frameTrailer[1] = keyIndex;
+    //         frameTrailer[0] = IV_LENGTH;
+    //         frameTrailer[1] = keyIndex;
 
-            // Construct frame trailer. Similar to the frame header described in
-            // https://tools.ietf.org/html/draft-omara-sframe-00#section-4.2
-            // but we put it at the end.
-            //
-            // ---------+-------------------------+-+---------+----
-            // payload  |IV...(length = IV_LENGTH)|R|IV_LENGTH|KID |
-            // ---------+-------------------------+-+---------+----
+    //         // Construct frame trailer. Similar to the frame header described in
+    //         // https://tools.ietf.org/html/draft-omara-sframe-00#section-4.2
+    //         // but we put it at the end.
+    //         //
+    //         // ---------+-------------------------+-+---------+----
+    //         // payload  |IV...(length = IV_LENGTH)|R|IV_LENGTH|KID |
+    //         // ---------+-------------------------+-+---------+----
 
-            return crypto.subtle.encrypt({
-                name: ENCRYPTION_ALGORITHM,
-                iv,
-                additionalData: new Uint8Array(encodedFrame.data, 0, frameHeader.byteLength)
-            }, this._cryptoKeyRing[keyIndex].encryptionKey, new Uint8Array(encodedFrame.data,
-                UNENCRYPTED_BYTES[encodedFrame.type]))
-            .then(cipherText => {
-                const newData = new ArrayBuffer(frameHeader.byteLength + cipherText.byteLength
-                    + iv.byteLength + frameTrailer.byteLength);
-                const newUint8 = new Uint8Array(newData);
+    //         return crypto.subtle.encrypt({
+    //             name: ENCRYPTION_ALGORITHM,
+    //             iv,
+    //             additionalData: new Uint8Array(encodedFrame.data, 0, frameHeader.byteLength)
+    //         }, this._cryptoKeyRing[keyIndex].encryptionKey, new Uint8Array(encodedFrame.data,
+    //             UNENCRYPTED_BYTES[encodedFrame.type]))
+    //         .then(cipherText => {
+    //             const newData = new ArrayBuffer(frameHeader.byteLength + cipherText.byteLength
+    //                 + iv.byteLength + frameTrailer.byteLength);
+    //             const newUint8 = new Uint8Array(newData);
 
-                newUint8.set(frameHeader); // copy first bytes.
-                newUint8.set(
-                    new Uint8Array(cipherText), frameHeader.byteLength); // add ciphertext.
-                newUint8.set(
-                    new Uint8Array(iv), frameHeader.byteLength + cipherText.byteLength); // append IV.
-                newUint8.set(
-                        frameTrailer,
-                        frameHeader.byteLength + cipherText.byteLength + iv.byteLength); // append frame trailer.
+    //             newUint8.set(frameHeader); // copy first bytes.
+    //             newUint8.set(
+    //                 new Uint8Array(cipherText), frameHeader.byteLength); // add ciphertext.
+    //             newUint8.set(
+    //                 new Uint8Array(iv), frameHeader.byteLength + cipherText.byteLength); // append IV.
+    //             newUint8.set(
+    //                     frameTrailer,
+    //                     frameHeader.byteLength + cipherText.byteLength + iv.byteLength); // append frame trailer.
 
-                encodedFrame.data = newData;
+    //             encodedFrame.data = newData;
 
-                return controller.enqueue(encodedFrame);
-            }, e => {
-                // TODO: surface this to the app.
-                console.error(e);
+    //             return controller.enqueue(encodedFrame);
+    //         }, e => {
+    //             // TODO: surface this to the app.
+    //             console.error(e);
 
-                // We are not enqueuing the frame here on purpose.
-            });
+    //             // We are not enqueuing the frame here on purpose.
+    //         });
+    //     }
+
+    //     /* NOTE WELL:
+    //      * This will send unencrypted data (only protected by DTLS transport encryption) when no key is configured.
+    //      * This is ok for demo purposes but should not be done once this becomes more relied upon.
+    //      */
+    //     controller.enqueue(encodedFrame);
+    // }
+
+    async encodeFunction(encodedFrame, controller) {
+        const timestamp = encodedFrame.timestamp;
+        const synchronizationSource = encodedFrame.getMetadata().synchronizationSource;
+        const timestampBuffer = new ArrayBuffer(DOP_LENGTH);
+        const timestampView = new DataView(timestampBuffer);
+
+        timestampView.setUint32(0, timestamp);
+        timestampView.setUint32(4, synchronizationSource);
+
+        const data = encodedFrame.data.slice(UNENCRYPTED_BYTES[encodedFrame.type]);
+        const frameIv = await this._digestMessage(this._dekkoIv, timestamp, synchronizationSource);
+        const dekkoEncryptedData = await crypto.subtle.encrypt(
+          {
+            name: ENCRYPTION_ALGORITHM,
+            iv: frameIv,
+          },
+          this._dekkoKey,
+          data
+        );
+
+        if (!dekkoEncryptedData) {
+            return;
         }
 
-        /* NOTE WELL:
-         * This will send unencrypted data (only protected by DTLS transport encryption) when no key is configured.
-         * This is ok for demo purposes but should not be done once this becomes more relied upon.
-         */
-        controller.enqueue(encodedFrame);
+        const newData = new ArrayBuffer(UNENCRYPTED_BYTES[encodedFrame.type] + dekkoEncryptedData.byteLength + DOP_LENGTH);
+        const newUint8 = new Uint8Array(newData);
+        newUint8.set(new Uint8Array(encodedFrame.data, 0, UNENCRYPTED_BYTES[encodedFrame.type])); // copy first bytes.
+        newUint8.set(new Uint8Array(dekkoEncryptedData), UNENCRYPTED_BYTES[encodedFrame.type]); // add ciphertext.
+        newUint8.set(
+          new Uint8Array(timestampBuffer), UNENCRYPTED_BYTES[encodedFrame.type] + dekkoEncryptedData.byteLength
+        ); // timestamp
+
+        encodedFrame.data = newData;
+
+        return controller.enqueue(encodedFrame);
     }
 
     /**
@@ -176,22 +234,54 @@ export class Context {
      * @param {RTCEncodedVideoFrame|RTCEncodedAudioFrame} encodedFrame - Encoded video frame.
      * @param {TransformStreamDefaultController} controller - TransportStreamController.
      */
+    // async decodeFunction(encodedFrame, controller) {
+    //     const data = new Uint8Array(encodedFrame.data);
+    //     const keyIndex = data[encodedFrame.data.byteLength - 1];
+
+    //     if (this._cryptoKeyRing[keyIndex]) {
+
+    //         const decodedFrame = await this._decryptFrame(
+    //             encodedFrame,
+    //             keyIndex);
+
+    //         return controller.enqueue(decodedFrame);
+    //     }
+
+    //     // TODO: this just passes through to the decoder. Is that ok? If we don't know the key yet
+    //     // we might want to buffer a bit but it is still unclear how to do that (and for how long etc).
+    //     controller.enqueue(encodedFrame);
+    // }
     async decodeFunction(encodedFrame, controller) {
-        const data = new Uint8Array(encodedFrame.data);
-        const keyIndex = data[encodedFrame.data.byteLength - 1];
+        try {
+            const timestampBuffer = encodedFrame.data.slice(-DOP_LENGTH);
+            const timestampView = new DataView(timestampBuffer);
+            const timestamp = timestampView.getUint32(0);
+            const synchronizationSource = timestampView.getUint32(4);
 
-        if (this._cryptoKeyRing[keyIndex]) {
+            const stop = encodedFrame.data.byteLength - DOP_LENGTH;
+            const start = UNENCRYPTED_BYTES[encodedFrame.type];
+            const data = encodedFrame.data.slice(start, stop);
 
-            const decodedFrame = await this._decryptFrame(
-                encodedFrame,
-                keyIndex);
+            const frameIv = await this._digestMessage(this._dekkoIv, timestamp, synchronizationSource);
+            const dekkoDecryptedData = await crypto.subtle.decrypt(
+              {
+                name: 'AES-GCM',
+                iv: frameIv,
+              },
+              this._dekkoKey,
+              data
+            );
 
-            return controller.enqueue(decodedFrame);
+            const newData = new ArrayBuffer(UNENCRYPTED_BYTES[encodedFrame.type] + dekkoDecryptedData.byteLength);
+            const newUint8 = new Uint8Array(newData);
+            newUint8.set(new Uint8Array(encodedFrame.data, 0, UNENCRYPTED_BYTES[encodedFrame.type]));
+            newUint8.set(new Uint8Array(dekkoDecryptedData), UNENCRYPTED_BYTES[encodedFrame.type]);
+            encodedFrame.data = newData;
+        } catch (err) {
+            console.error(err, 'decrypt error frame');
         }
 
-        // TODO: this just passes through to the decoder. Is that ok? If we don't know the key yet
-        // we might want to buffer a bit but it is still unclear how to do that (and for how long etc).
-        controller.enqueue(encodedFrame);
+        return controller.enqueue(encodedFrame);
     }
 
     /**

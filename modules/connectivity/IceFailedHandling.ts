@@ -71,6 +71,7 @@ export default class IceFailedHandling {
             () => {
                 if (!this._canceled) {
                     this._iceFailedTimeout = window.setTimeout(() => {
+                        window.dispatchEvent(new Event('DEKKO_STROPHE_DISCONNECTED'));
                         this._iceFailedTimeout = undefined;
                         this._actOnIceFailed();
                     }, 2000);
@@ -78,6 +79,7 @@ export default class IceFailedHandling {
             },
             error => {
                 logger.error('PING error/timeout - not sending ICE failed', error);
+                indow.dispatchEvent(new Event('DEKKO_STROPHE_DISCONNECTED'));
             });
     }
 

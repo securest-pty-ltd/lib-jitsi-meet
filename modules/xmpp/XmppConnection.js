@@ -511,7 +511,10 @@ export default class XmppConnection extends Listenable {
             logger.error(`Trying to send stanza while not connected. Status:${this._status} Proto:${
                 this.isUsingWebSocket ? this._stropheConn?._proto?.socket?.readyState : 'bosh'
             }`);
-            throw new Error('Not connected');
+            // throw new Error('Not connected');
+          window.dispatchEvent(new Event('DEKKO_STROPHE_DISCONNECTED'));
+          console.error('Strophe Not connected');
+          return;
         }
         this._stropheConn.send(stanza);
     }

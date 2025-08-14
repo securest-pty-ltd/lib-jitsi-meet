@@ -1,9 +1,13 @@
+import { getLogger } from '@jitsi/logger';
+
 import {
     CONNECTION_DISCONNECTED,
     CONNECTION_ESTABLISHED,
     CONNECTION_FAILED
 } from './JitsiConnectionEvents';
 import XMPP from './modules/xmpp/xmpp';
+
+const logger = getLogger('authenticateAndUpgradeRole');
 
 /**
  * @typedef {Object} UpgradeRoleError
@@ -40,7 +44,7 @@ import XMPP from './modules/xmpp/xmpp';
  * @param {string} options.id - XMPP user's ID to log in. For example,
  * user@xmpp-server.com.
  * @param {string} options.password - XMPP user's password to log in with.
- * @param {string} [options.roomPassword] - The password to join the MUC with.
+ * @param {Function} [options.onCreateResource]
  * @param {Function} [options.onLoginSuccessful] - Callback called when logging
  * into the XMPP server was successful. The next step will be to obtain a new
  * session ID from Jicofo and join the MUC using it which will effectively
@@ -65,10 +69,7 @@ export default function authenticateAndUpgradeRole({
 
     // 2. Let the API client/consumer know as soon as the XMPP user has been
     //    successfully logged in.
-    onLoginSuccessful,
-
-    // 3. Join the MUC.
-    roomPassword
+    onLoginSuccessful
 }) {
     let canceled = false;
     let rejectPromise;
@@ -103,7 +104,7 @@ export default function authenticateAndUpgradeRole({
                     onCreateResource
                 );
 
-                room.moderator.authenticate()
+                room.xmpp.moderator.authenticate(room.roomjid)
                     .then(() => {
                         xmpp && xmpp.disconnect();
 
@@ -111,12 +112,18 @@ export default function authenticateAndUpgradeRole({
                             return;
                         }
 
+                        // we execute this logic in JitsiConference where we bind the current conference as `this`
                         // At this point we should have the new session ID
-                        // stored in the settings. Jicofo will allow to join the
-                        // room.
-                        this.join(roomPassword);
+                        // stored in the settings. Send a new conference IQ.
+                        this.room.xmpp.moderator.sendConferenceRequest(this.room.roomjid)
+                            .catch(e => logger.trace('sendConferenceRequest rejected', e))
+                            .finally(() => {
+                                // we need to reset it because of breakout rooms which will
+                                // reuse connection but will invite jicofo
+                                this.room.xmpp.moderator.conferenceRequestSent = false;
 
-                        resolve();
+                                resolve();
+                            });
                     })
                     .catch(({ error, message }) => {
                         xmpp.disconnect();

@@ -1,14 +1,15 @@
-import { getLogger } from 'jitsi-meet-logger';
+import { getLogger } from '@jitsi/logger';
 
 import RTCEvents from '../../service/RTC/RTCEvents';
-import XMPPEvents from '../../service/xmpp/XMPPEvents';
+import { XMPPEvents } from '../../service/xmpp/XMPPEvents';
 import RTC from '../RTC/RTC';
 import JingleSessionPC from '../xmpp/JingleSessionPC';
 import { DEFAULT_STUN_SERVERS } from '../xmpp/xmpp';
 
+import CustomSignalingLayer from './CustomSignalingLayer';
 import { ACTIONS } from './constants';
 
-const logger = getLogger(__filename);
+const logger = getLogger('modules/proxyconnection/ProxyConnectionPC');
 
 /**
  * An adapter around {@code JingleSessionPC} so its logic can be re-used without
@@ -22,25 +23,21 @@ export default class ProxyConnectionPC {
      * Initializes a new {@code ProxyConnectionPC} instance.
      *
      * @param {Object} options - Values to initialize the instance with.
-     * @param {Object} [options.iceConfig] - The {@code RTCConfiguration} to use
-     * for the peer connection.
-     * @param {boolean} [options.isInitiator] - If true, the local client should
-     * send offers. If false, the local client should send answers. Defaults to
-     * false.
-     * @param {Function} options.onRemoteStream - Callback to invoke when a
-     * remote media stream has been received through the peer connection.
-     * @param {string} options.peerJid - The jid of the remote client with which
-     * the peer connection is being establish and which should receive direct
-     * messages regarding peer connection updates.
-     * @param {boolean} [options.receiveVideo] - Whether or not the peer
-     * connection should accept incoming video streams. Defaults to false.
-     * @param {Function} options.onSendMessage - Callback to invoke when a
-     * message has to be sent (signaled) out.
+     * @param {Object} [options.pcConfig] - The {@code RTCConfiguration} to use for the WebRTC peer connection.
+     * @param {boolean} [options.isInitiator] - If true, the local client should send offers. If false, the local
+     * client should send answers. Defaults to false.
+     * @param {Function} options.onRemoteStream - Callback to invoke when a remote media stream has been received
+     * through the peer connection.
+     * @param {string} options.peerJid - The jid of the remote client with which the peer connection is being establish
+     * and which should receive direct messages regarding peer connection updates.
+     * @param {boolean} [options.receiveVideo] - Whether or not the peer connection should accept incoming video
+     * streams. Defaults to false.
+     * @param {Function} options.onSendMessage - Callback to invoke when a message has to be sent (signaled) out.
      */
     constructor(options = {}) {
         this._options = {
-            iceConfig: {},
             isInitiator: false,
+            pcConfig: {},
             receiveAudio: false,
             receiveVideo: false,
             ...options
@@ -166,15 +163,15 @@ export default class ProxyConnectionPC {
         const connectionStub = {
             // At the time this is used for Spot and it's okay to say the connection is always connected, because if
             // spot has no signalling it will not be in a meeting where this is used.
+            // eslint-disable-next-line no-empty-function
+            addCancellableListener: () => () => { },
+            // eslint-disable-next-line no-empty-function
+            addEventListener: () => () => { },
             connected: true,
             jingle: {
                 terminate: () => { /** no-op */ }
             },
-            sendIQ: this._onSendMessage,
-
-            // Returns empty function, because it does not add any listeners for real
-            // eslint-disable-next-line no-empty-function
-            addEventListener: () => () => { }
+            sendIQ: this._onSendMessage
         };
 
         /**
@@ -185,9 +182,9 @@ export default class ProxyConnectionPC {
          *
          * @type {Object}
          */
-        const iceConfigStub = {
+        const pcConfigStub = {
             iceServers: DEFAULT_STUN_SERVERS,
-            ...this._options.iceConfig
+            ...this._options.pcConfig
         };
 
         /**
@@ -220,16 +217,12 @@ export default class ProxyConnectionPC {
          * @type {Object}
          */
         const roomStub = {
-            addPresenceListener: () => { /** no-op */ },
+            addEventListener: () => { /* no op */ },
+            addPresenceListener: () => { /* no-op */ },
             connectionTimes: [],
             eventEmitter: { emit: emitter },
-            getMediaPresenceInfo: () => {
-                // Errors occur if this function does not return an object
-
-                return {};
-            },
-            removePresenceListener: () => { /** no-op */ },
-            supportsRestartByTerminate: () => false
+            removeEventListener: () => { /* no op */ },
+            removePresenceListener: () => { /* no-op */ }
         };
 
         /**
@@ -267,16 +260,20 @@ export default class ProxyConnectionPC {
                 offerToReceiveAudio: this._options.receiveAudio,
                 offerToReceiveVideo: this._options.receiveVideo
             }, // mediaConstraints
-            iceConfigStub, // iceConfig
+            pcConfigStub, // pcConfig
             true, // isP2P
             this._options.isInitiator // isInitiator
         );
+
+        const signalingLayer = new CustomSignalingLayer();
+
+        signalingLayer.setChatRoom(roomStub);
 
         /**
          * An additional initialize call is necessary to properly set instance
          * variable for calling.
          */
-        peerConnection.initialize(roomStub, this._rtc, configStub);
+        peerConnection.initialize(roomStub, this._rtc, signalingLayer, configStub);
 
         return peerConnection;
     }
@@ -285,7 +282,7 @@ export default class ProxyConnectionPC {
      * Invoked when a connection related issue has been encountered.
      *
      * @param {string} errorType - The constant indicating the type of the error
-     * that occured.
+     * that occurred.
      * @param {string} details - Optional additional data about the error.
      * @private
      * @returns {void}
@@ -314,11 +311,17 @@ export default class ProxyConnectionPC {
      * out to the remote peer.
      *
      * @param {XML} iq - The message to signal out.
+     * @param {Function} callback - Callback when the IQ was acknowledged.
      * @private
      * @returns {void}
      */
-    _onSendMessage(iq) {
+    _onSendMessage(iq, callback) {
         this._options.onSendMessage(this._options.peerJid, iq);
+
+        if (callback) {
+            // Fake some time to receive the acknowledge.
+            setTimeout(callback, 250);
+        }
     }
 
     /**
@@ -326,7 +329,7 @@ export default class ProxyConnectionPC {
      * The passed in jingle element should contain an SDP answer to a previously
      * sent SDP offer.
      *
-     * @param {Object} $jingle - The jingle element wrapped in jQuery.
+     * @param {Object} $jingle - The jingle element.
      * @private
      * @returns {void}
      */
@@ -344,7 +347,7 @@ export default class ProxyConnectionPC {
      * Callback invoked in response to a request to start a proxy connection.
      * The passed in jingle element should contain an SDP offer.
      *
-     * @param {Object} $jingle - The jingle element wrapped in jQuery.
+     * @param {Object} $jingle - The jingle element.
      * @private
      * @returns {void}
      */
@@ -364,7 +367,8 @@ export default class ProxyConnectionPC {
                 this._options.peerJid,
                 ACTIONS.CONNECTION_ERROR,
                 'session initiate error'
-            )
+            ),
+            []
         );
     }
 
@@ -397,7 +401,7 @@ export default class ProxyConnectionPC {
      * Callback invoked in response to ICE candidates from the remote peer.
      * The passed in jingle element should contain an ICE candidate.
      *
-     * @param {Object} $jingle - The jingle element wrapped in jQuery.
+     * @param {Object} $jingle - The jingle element.
      * @private
      * @returns {void}
      */

@@ -1,40 +1,22 @@
-/* global
-          __filename,
-          MediaStreamTrack,
-          RTCIceCandidate: true,
-          RTCPeerConnection,
-          RTCSessionDescription: true
-*/
-
-import EventEmitter from 'events';
-import { getLogger } from 'jitsi-meet-logger';
-import clonedeep from 'lodash.clonedeep';
+import { getLogger } from '@jitsi/logger';
+import { cloneDeep } from 'lodash-es';
+import 'webrtc-adapter';
 
 import JitsiTrackError from '../../JitsiTrackError';
 import * as JitsiTrackErrors from '../../JitsiTrackErrors';
-import CameraFacingMode from '../../service/RTC/CameraFacingMode';
+import { CameraFacingMode } from '../../service/RTC/CameraFacingMode';
 import RTCEvents from '../../service/RTC/RTCEvents';
 import Resolutions from '../../service/RTC/Resolutions';
-import VideoType from '../../service/RTC/VideoType';
+import { VideoType } from '../../service/RTC/VideoType';
 import { AVAILABLE_DEVICE } from '../../service/statistics/AnalyticsEvents';
 import browser from '../browser';
-import SDPUtil from '../sdp/SDPUtil';
 import Statistics from '../statistics/statistics';
-import GlobalOnErrorHandler from '../util/GlobalOnErrorHandler';
 import Listenable from '../util/Listenable';
+import { isValidNumber } from '../util/MathUtil';
 
 import screenObtainer from './ScreenObtainer';
 
-const logger = getLogger(__filename);
-
-// Require adapter only for certain browsers. This is being done for
-// react-native, which has its own shims, and while browsers are being migrated
-// over to use adapter's shims.
-if (browser.usesAdapter()) {
-    require('webrtc-adapter');
-}
-
-const eventEmitter = new EventEmitter();
+const logger = getLogger('modules/RTC/RTCUtils');
 
 const AVAILABLE_DEVICES_POLL_INTERVAL_TIME = 3000; // ms
 
@@ -45,6 +27,10 @@ const AVAILABLE_DEVICES_POLL_INTERVAL_TIME = 3000; // ms
  */
 const DEFAULT_CONSTRAINTS = {
     video: {
+        frameRate: {
+            max: 30,
+            min: 15
+        },
         height: {
             ideal: 720,
             max: 720,
@@ -107,11 +93,14 @@ function emptyFuncton() {
  * @returns {Object}
  */
 function getConstraints(um = [], options = {}) {
-    // Create a deep copy of the constraints to avoid any modification of
-    // the passed in constraints object.
-    const constraints = clonedeep(options.constraints || DEFAULT_CONSTRAINTS);
+    // Create a deep copy of the constraints to avoid any modification of the passed in constraints object.
+    const constraints = cloneDeep(options.constraints || DEFAULT_CONSTRAINTS);
 
     if (um.indexOf('video') >= 0) {
+        if (!constraints.video) {
+            constraints.video = {};
+        }
+
         // The "resolution" option is a shortcut and takes precendence.
         if (Resolutions[options.resolution]) {
             const r = Resolutions[options.resolution];
@@ -120,8 +109,8 @@ function getConstraints(um = [], options = {}) {
             constraints.video.width = { ideal: r.width };
         }
 
-        if (!constraints.video) {
-            constraints.video = {};
+        if (!constraints.video.frameRate) {
+            constraints.video.frameRate = DEFAULT_CONSTRAINTS.video.frameRate;
         }
 
         // Override the constraints on Safari because of the following webkit bug.
@@ -141,11 +130,9 @@ function getConstraints(um = [], options = {}) {
             }
         }
         if (options.cameraDeviceId) {
-            constraints.video.deviceId = options.cameraDeviceId;
-        } else {
-            const facingMode = options.facingMode || CameraFacingMode.USER;
-
-            constraints.video.facingMode = facingMode;
+            constraints.video.deviceId = { exact: options.cameraDeviceId };
+        } else if (browser.isMobileDevice()) {
+            constraints.video.facingMode = options.facingMode || CameraFacingMode.USER;
         }
     } else {
         constraints.video = false;
@@ -153,47 +140,46 @@ function getConstraints(um = [], options = {}) {
 
     if (um.indexOf('audio') >= 0) {
         if (!constraints.audio || typeof constraints.audio === 'boolean') {
-            constraints.audio = {};
+            constraints.audio = {
+                autoGainControl: !disableAGC && !disableAP,
+                echoCancellation: !disableAEC && !disableAP,
+                noiseSuppression: !disableNS && !disableAP
+            };
+            if (stereo) {
+                Object.assign(constraints.audio, { channelCount: 2 });
+            }
+        } else {
+            const allowedAudioProps = {
+                autoGainControl: 'boolean',
+                channelCount: 'number',
+                echoCancellation: 'boolean',
+                noiseSuppression: 'boolean'
+            };
+
+            const validConstraints = {};
+
+            for (const [ key, value ] of Object.entries(constraints.audio)) {
+                if (allowedAudioProps[key]) {
+                    if (typeof value !== allowedAudioProps[key]) {
+                        continue;
+                    }
+                    if (key === 'channelCount' && ![ 1, 2 ].includes(value)) {
+                        continue;
+                    }
+                    validConstraints[key] = value;
+                }
+            }
+            constraints.audio = validConstraints;
         }
 
-        constraints.audio = {
-            autoGainControl: !disableAGC && !disableAP,
-            deviceId: options.micDeviceId,
-            echoCancellation: !disableAEC && !disableAP,
-            noiseSuppression: !disableNS && !disableAP
-        };
-
-        if (stereo) {
-            Object.assign(constraints.audio, { channelCount: 2 });
+        if (options.micDeviceId) {
+            constraints.audio.deviceId = { exact: options.micDeviceId };
         }
     } else {
         constraints.audio = false;
     }
 
     return constraints;
-}
-
-/**
- * Updates the granted permissions based on the options we requested and the
- * streams we received.
- * @param um the options we requested to getUserMedia.
- * @param stream the stream we received from calling getUserMedia.
- */
-function updateGrantedPermissions(um, stream) {
-    const audioTracksReceived
-        = Boolean(stream) && stream.getAudioTracks().length > 0;
-    const videoTracksReceived
-        = Boolean(stream) && stream.getVideoTracks().length > 0;
-    const grantedPermissions = {};
-
-    if (um.indexOf('video') !== -1) {
-        grantedPermissions.video = videoTracksReceived;
-    }
-    if (um.indexOf('audio') !== -1) {
-        grantedPermissions.audio = audioTracksReceived;
-    }
-
-    eventEmitter.emit(RTCEvents.PERMISSIONS_CHANGED, grantedPermissions);
 }
 
 /**
@@ -221,11 +207,11 @@ function compareAvailableMediaDevices(newDevices) {
      */
     function mediaDeviceInfoToJSON(info) {
         return JSON.stringify({
-            kind: info.kind,
             deviceId: info.deviceId,
+            facing: info.facing,
             groupId: info.groupId,
-            label: info.label,
-            facing: info.facing
+            kind: info.kind,
+            label: info.label
         });
     }
 }
@@ -251,51 +237,16 @@ function sendDeviceListToAnalytics(deviceList) {
         const attributes = {
             'audio_input_device_count': audioInputDeviceCount,
             'audio_output_device_count': audioOutputDeviceCount,
-            'video_input_device_count': videoInputDeviceCount,
-            'video_output_device_count': videoOutputDeviceCount,
-            'device_id': device.deviceId,
             'device_group_id': device.groupId,
+            'device_id': device.deviceId,
             'device_kind': device.kind,
-            'device_label': device.label
+            'device_label': device.label,
+            'video_input_device_count': videoInputDeviceCount,
+            'video_output_device_count': videoOutputDeviceCount
         };
 
         Statistics.sendAnalytics(AVAILABLE_DEVICE, attributes);
     });
-}
-
-
-/**
- * Update known devices.
- *
- * @param {Array<Object>} pds - The new devices.
- * @returns {void}
- *
- * NOTE: Use this function as a shared callback to handle both the devicechange event  and the polling implementations.
- * This prevents duplication and works around a chrome bug (verified to occur on 68) where devicechange fires twice in
- * a row, which can cause async post devicechange processing to collide.
- */
-function updateKnownDevices(pds) {
-    if (compareAvailableMediaDevices(pds)) {
-        onMediaDevicesListChanged(pds);
-    }
-}
-
-/**
- * Event handler for the 'devicechange' event.
- *
- * @param {MediaDeviceInfo[]} devices - list of media devices.
- * @emits RTCEvents.DEVICE_LIST_CHANGED
- */
-function onMediaDevicesListChanged(devicesReceived) {
-    availableDevices = devicesReceived.slice(0);
-    logger.info('list of media devices has changed:', availableDevices);
-
-    sendDeviceListToAnalytics(availableDevices);
-
-    // Used by tracks to update the real device id before the consumer of lib-jitsi-meet receives the new device list.
-    eventEmitter.emit(RTCEvents.DEVICE_LIST_WILL_CHANGE, availableDevices);
-
-    eventEmitter.emit(RTCEvents.DEVICE_LIST_CHANGED, availableDevices);
 }
 
 /**
@@ -306,7 +257,9 @@ class RTCUtils extends Listenable {
      *
      */
     constructor() {
-        super(eventEmitter);
+        super();
+
+        this._initOnce = false;
     }
 
     /**
@@ -340,72 +293,76 @@ class RTCUtils extends Listenable {
             logger.info(`Stereo: ${stereo}`);
         }
 
+        if (this._initOnce) {
+            return;
+        }
+
+        // Anything beyond this point needs to be initialized only once.
+        this._initOnce = true;
+
         window.clearInterval(availableDevicesPollTimer);
         availableDevicesPollTimer = undefined;
 
-        if (browser.isReactNative()) {
-            this.RTCPeerConnectionType = RTCPeerConnection;
-
-            this.attachMediaStream = undefined; // Unused on React Native.
-
-            this.getStreamID = function({ id }) {
-                // The react-native-webrtc implementation that we use at the
-                // time of this writing returns a number for the id of
-                // MediaStream. Let's just say that a number contains no special
-                // characters.
-                return (
-                    typeof id === 'number'
-                        ? id
-                        : SDPUtil.filterSpecialChars(id));
-            };
-            this.getTrackID = ({ id }) => id;
-        } else {
-            this.RTCPeerConnectionType = RTCPeerConnection;
-
-            this.attachMediaStream
-                = wrapAttachMediaStream((element, stream) => {
-                    if (element) {
-                        element.srcObject = stream;
-                    }
-                });
-
-            this.getStreamID = ({ id }) => id;
-            this.getTrackID = ({ id }) => id;
-        }
-
-        this.pcConstraints = browser.isChromiumBased() || browser.isReactNative()
-            ? { optional: [
-                { googScreencastMinBitrate: 100 },
-                { googCpuOveruseDetection: true }
-            ] }
-            : {};
-
         screenObtainer.init(options);
 
-        if (this.isDeviceListAvailable()) {
-            this.enumerateDevices(ds => {
-                availableDevices = ds.slice(0);
+        this.enumerateDevices(ds => {
+            availableDevices = ds.slice(0);
 
-                logger.debug('Available devices: ', availableDevices);
-                sendDeviceListToAnalytics(availableDevices);
+            logger.debug('Available devices: ', availableDevices);
+            sendDeviceListToAnalytics(availableDevices);
 
-                eventEmitter.emit(
-                    RTCEvents.DEVICE_LIST_AVAILABLE,
-                    availableDevices);
+            this.eventEmitter.emit(
+                RTCEvents.DEVICE_LIST_AVAILABLE,
+                availableDevices);
 
-                if (browser.supportsDeviceChangeEvent()) {
-                    navigator.mediaDevices.addEventListener(
-                        'devicechange',
-                        () => this.enumerateDevices(emptyFuncton));
-                } else {
-                    // Periodically poll enumerateDevices() method to check if
-                    // list of media devices has changed.
-                    availableDevicesPollTimer = window.setInterval(
-                        () => this.enumerateDevices(emptyFuncton),
-                        AVAILABLE_DEVICES_POLL_INTERVAL_TIME);
-                }
+            if (browser.supportsDeviceChangeEvent()) {
+                navigator.mediaDevices.addEventListener(
+                    'devicechange',
+                    () => this.enumerateDevices(emptyFuncton));
+            } else {
+                // Periodically poll enumerateDevices() method to check if
+                // list of media devices has changed.
+                availableDevicesPollTimer = window.setInterval(
+                    () => this.enumerateDevices(emptyFuncton),
+                    AVAILABLE_DEVICES_POLL_INTERVAL_TIME);
+            }
+        });
+    }
+
+    /**
+     * Attaches the given media stream to the given element.
+     *
+     * @param {*} element DOM element.
+     * @param {*} stream MediaStream.
+     * @returns Promise<void>
+     */
+    attachMediaStream(element, stream) {
+        if (element) {
+            element.srcObject = stream;
+        }
+
+        if (element && stream
+                && this.isDeviceChangeAvailable('output')
+                && stream.getAudioTracks().length
+
+                // we skip setting audio output if there was no explicit change
+                && audioOutputChanged) {
+            return element.setSinkId(this.getAudioOutputDevice()).catch(ex => {
+                const err
+                    = new JitsiTrackError(ex, null, [ 'audiooutput' ]);
+
+                logger.warn(
+                    'Failed to set audio output device for the element.'
+                        + ' Default audio output device will be used'
+                        + ' instead',
+                    element?.id,
+                    err);
+
+                throw err;
             });
         }
+
+        return Promise.resolve();
     }
 
     /**
@@ -415,12 +372,12 @@ class RTCUtils extends Listenable {
     enumerateDevices(callback) {
         navigator.mediaDevices.enumerateDevices()
             .then(devices => {
-                updateKnownDevices(devices);
+                this._updateKnownDevices(devices);
                 callback(devices);
             })
             .catch(error => {
                 logger.warn(`Failed to  enumerate devices. ${error}`);
-                updateKnownDevices([]);
+                this._updateKnownDevices([]);
                 callback([]);
             });
     }
@@ -438,7 +395,7 @@ class RTCUtils extends Listenable {
         return new Promise((resolve, reject) => {
             let gumTimeout, timeoutExpired = false;
 
-            if (typeof timeout === 'number' && !isNaN(timeout) && timeout > 0) {
+            if (isValidNumber(timeout) && timeout > 0) {
                 gumTimeout = setTimeout(() => {
                     timeoutExpired = true;
                     gumTimeout = undefined;
@@ -448,8 +405,8 @@ class RTCUtils extends Listenable {
 
             navigator.mediaDevices.getUserMedia(constraints)
                 .then(stream => {
-                    logger.log('onUserMediaSuccess');
-                    updateGrantedPermissions(umDevices, stream);
+                    logger.info('onUserMediaSuccess');
+                    this._updateGrantedPermissions(umDevices, stream);
                     if (!timeoutExpired) {
                         if (typeof gumTimeout !== 'undefined') {
                             clearTimeout(gumTimeout);
@@ -465,16 +422,12 @@ class RTCUtils extends Listenable {
                         if (typeof gumTimeout !== 'undefined') {
                             clearTimeout(gumTimeout);
                         }
-                        reject(error);
+                        reject(jitsiError);
                     }
 
                     if (jitsiError.name === JitsiTrackErrors.PERMISSION_DENIED) {
-                        updateGrantedPermissions(umDevices, undefined);
+                        this._updateGrantedPermissions(umDevices, undefined);
                     }
-
-                    // else {
-                    // Probably the error is not caused by the lack of permissions and we don't need to update them.
-                    // }
                 });
         });
     }
@@ -484,11 +437,12 @@ class RTCUtils extends Listenable {
      * logic compared to use screenObtainer versus normal device capture logic
      * in RTCUtils#_getUserMedia.
      *
+     * @param {Object} options - Optional parameters.
      * @returns {Promise} A promise which will be resolved with an object which
      * contains the acquired display stream. If desktop sharing is not supported
      * then a rejected promise will be returned.
      */
-    _getDesktopMedia() {
+    _getDesktopMedia(options) {
         if (!screenObtainer.isSupported()) {
             return Promise.reject(new Error('Desktop sharing is not supported!'));
         }
@@ -500,7 +454,8 @@ class RTCUtils extends Listenable {
                 },
                 error => {
                     reject(error);
-                });
+                },
+                options);
         });
     }
 
@@ -538,6 +493,65 @@ class RTCUtils extends Listenable {
     }
 
     /**
+     * Event handler for the 'devicechange' event.
+     *
+     * @param {MediaDeviceInfo[]} devices - list of media devices.
+     * @emits RTCEvents.DEVICE_LIST_CHANGED
+     */
+    _onMediaDevicesListChanged(devicesReceived) {
+        availableDevices = devicesReceived.slice(0);
+        logger.info('list of media devices has changed:', availableDevices);
+
+        sendDeviceListToAnalytics(availableDevices);
+
+        // Used by tracks to update the real device id before the consumer of lib-jitsi-meet receives the
+        // new device list.
+        this.eventEmitter.emit(RTCEvents.DEVICE_LIST_WILL_CHANGE, availableDevices);
+
+        this.eventEmitter.emit(RTCEvents.DEVICE_LIST_CHANGED, availableDevices);
+    }
+
+    /**
+     * Update known devices.
+     *
+     * @param {Array<Object>} pds - The new devices.
+     * @returns {void}
+     *
+     * NOTE: Use this function as a shared callback to handle both the devicechange event and the
+     * polling implementations.
+     * This prevents duplication and works around a chrome bug (verified to occur on 68) where devicechange
+     * fires twice in a row, which can cause async post devicechange processing to collide.
+     */
+    _updateKnownDevices(pds) {
+        if (compareAvailableMediaDevices(pds)) {
+            this._onMediaDevicesListChanged(pds);
+        }
+    }
+
+    /**
+     * Updates the granted permissions based on the options we requested and the
+     * streams we received.
+     * @param um the options we requested to getUserMedia.
+     * @param stream the stream we received from calling getUserMedia.
+     */
+    _updateGrantedPermissions(um, stream) {
+        const audioTracksReceived
+            = Boolean(stream) && stream.getAudioTracks().length > 0;
+        const videoTracksReceived
+            = Boolean(stream) && stream.getVideoTracks().length > 0;
+        const grantedPermissions = {};
+
+        if (um.indexOf('video') !== -1) {
+            grantedPermissions.video = videoTracksReceived;
+        }
+        if (um.indexOf('audio') !== -1) {
+            grantedPermissions.audio = audioTracksReceived;
+        }
+
+        this.eventEmitter.emit(RTCEvents.PERMISSIONS_CHANGED, grantedPermissions);
+    }
+
+    /**
      * Gets streams from specified device types. This function intentionally
      * ignores errors for upstream to catch and handle instead.
      *
@@ -545,11 +559,19 @@ class RTCUtils extends Listenable {
      * relevant constraints.
      * @param {string[]} options.devices - The types of media to capture. Valid
      * values are "desktop", "audio", and "video".
-     * @param {Object} options.desktopSharingFrameRate
-     * @param {Object} options.desktopSharingFrameRate.min - Minimum fps
-     * @param {Object} options.desktopSharingFrameRate.max - Maximum fps
-     * @param {String} options.desktopSharingSourceDevice - The device id or
+     * @param {Object} [options.desktopSharingFrameRate]
+     * @param {Object} [options.desktopSharingFrameRate.min] - Minimum fps
+     * @param {Object} [options.desktopSharingFrameRate.max] - Maximum fps
+     * @param {string} [options.desktopSharingSourceDevice] The device id or
      * label for a video input source that should be used for screensharing.
+     * @param {Array<string>} [options.desktopSharingSources] - The types of sources ("screen", "window", etc)
+     * from which the user can select what to share.
+     * @param {string} [options.cameraDeviceId] -  camera device id
+     * @param {string} [options.micDeviceId] - microphone device id
+     * @param {string} [options.resolution] - resolution constraints
+     * @param {Array} [options.effects] - optional effects array for the track
+     * @param {ITrackConstraints} [options.constraints] - The constraints to use for
+     * the audio and video tracks.
      * @returns {Promise} The promise, when successful, will return an array of
      * meta data for the requested device type, which includes the stream and
      * track. If an error occurs, it will be deferred to the caller for
@@ -562,6 +584,7 @@ class RTCUtils extends Listenable {
         } = options;
 
         const mediaStreamsMetaData = [];
+        let constraints = {};
 
         // Declare private functions to be used in the promise chain below.
         // These functions are declared in the scope of this function because
@@ -583,7 +606,9 @@ class RTCUtils extends Listenable {
             }
 
             const {
-                desktopSharingSourceDevice
+                desktopSharingSourceDevice,
+                desktopSharingSources,
+                resolution
             } = otherOptions;
 
             // Attempt to use a video input device as a screenshare source if
@@ -604,7 +629,7 @@ class RTCUtils extends Listenable {
                 }
 
                 const requestedDevices = [ 'video' ];
-                const constraints = {
+                const deviceConstraints = {
                     video: {
                         deviceId: matchingDevice.deviceId
 
@@ -612,7 +637,7 @@ class RTCUtils extends Listenable {
                     }
                 };
 
-                return this._getUserMedia(requestedDevices, constraints, timeout)
+                return this._getUserMedia(requestedDevices, deviceConstraints, timeout)
                     .then(stream => {
                         return {
                             sourceType: 'device',
@@ -621,7 +646,9 @@ class RTCUtils extends Listenable {
                     });
             }
 
-            return this._getDesktopMedia();
+            return this._getDesktopMedia({
+                desktopSharingSources,
+                resolution });
         }.bind(this);
 
         /**
@@ -646,9 +673,9 @@ class RTCUtils extends Listenable {
                 const desktopAudioStream = new MediaStream(desktopAudioTracks);
 
                 mediaStreamsMetaData.push({
-                    stream: desktopAudioStream,
                     sourceId,
                     sourceType,
+                    stream: desktopAudioStream,
                     track: desktopAudioStream.getAudioTracks()[0]
                 });
             }
@@ -659,9 +686,9 @@ class RTCUtils extends Listenable {
                 const desktopVideoStream = new MediaStream(desktopVideoTracks);
 
                 mediaStreamsMetaData.push({
-                    stream: desktopVideoStream,
                     sourceId,
                     sourceType,
+                    stream: desktopVideoStream,
                     track: desktopVideoStream.getVideoTracks()[0],
                     videoType: VideoType.DESKTOP
                 });
@@ -683,7 +710,7 @@ class RTCUtils extends Listenable {
                 return Promise.resolve();
             }
 
-            const constraints = getConstraints(requestedCaptureDevices, otherOptions);
+            constraints = getConstraints(requestedCaptureDevices, otherOptions);
 
             logger.info('Got media constraints: ', JSON.stringify(constraints));
 
@@ -710,9 +737,10 @@ class RTCUtils extends Listenable {
                 const audioStream = new MediaStream(audioTracks);
 
                 mediaStreamsMetaData.push({
+                    constraints: constraints.audio,
+                    effects: otherOptions.effects,
                     stream: audioStream,
-                    track: audioStream.getAudioTracks()[0],
-                    effects: otherOptions.effects
+                    track: audioStream.getAudioTracks()[0]
                 });
             }
 
@@ -722,10 +750,11 @@ class RTCUtils extends Listenable {
                 const videoStream = new MediaStream(videoTracks);
 
                 mediaStreamsMetaData.push({
+                    constraints: constraints.video,
+                    effects: otherOptions.effects,
                     stream: videoStream,
                     track: videoStream.getVideoTracks()[0],
-                    videoType: VideoType.CAMERA,
-                    effects: otherOptions.effects
+                    videoType: VideoType.CAMERA
                 });
             }
         };
@@ -745,18 +774,6 @@ class RTCUtils extends Listenable {
     }
 
     /**
-     * Checks whether it is possible to enumerate available cameras/microphones.
-     *
-     * @returns {boolean} {@code true} if the device listing is available;
-     * {@code false}, otherwise.
-     */
-    isDeviceListAvailable() {
-        return Boolean(
-            navigator.mediaDevices
-                && navigator.mediaDevices.enumerateDevices);
-    }
-
-    /**
      * Returns true if changing the input (camera / microphone) or output
      * (audio) device is supported and false if not.
      * @params {string} [deviceType] - type of device to change. Default is
@@ -764,9 +781,11 @@ class RTCUtils extends Listenable {
      * @returns {boolean} true if available, false otherwise.
      */
     isDeviceChangeAvailable(deviceType) {
-        return deviceType === 'output' || deviceType === 'audiooutput'
-            ? isAudioOutputDeviceChangeAvailable
-            : true;
+        if (deviceType === 'output' || deviceType === 'audiooutput') {
+            return isAudioOutputDeviceChangeAvailable;
+        }
+
+        return true;
     }
 
     /**
@@ -825,9 +844,9 @@ class RTCUtils extends Listenable {
                 audioOutputDeviceId = deviceId;
                 audioOutputChanged = true;
 
-                logger.log(`Audio output device set to ${deviceId}`);
+                logger.debug(`Audio output device set to ${deviceId}`);
 
-                eventEmitter.emit(RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED,
+                this.eventEmitter.emit(RTCEvents.AUDIO_OUTPUT_DEVICE_CHANGED,
                     deviceId);
             });
     }
@@ -861,24 +880,16 @@ class RTCUtils extends Listenable {
     }
 
     /**
-     * Returns whether available devices have permissions granted
-     * @returns {Boolean}
-     */
-    arePermissionsGrantedForAvailableDevices() {
-        return availableDevices.some(device => Boolean(device.label));
-    }
-
-    /**
      * Returns event data for device to be reported to stats.
      * @returns {MediaDeviceInfo} device.
      */
     getEventDataForActiveDevice(device) {
         const deviceList = [];
         const deviceData = {
-            'deviceId': device.deviceId,
-            'kind': device.kind,
-            'label': device.label,
-            'groupId': device.groupId
+            deviceId: device.deviceId,
+            groupId: device.groupId,
+            kind: device.kind,
+            label: device.label
         };
 
         deviceList.push(deviceData);
@@ -887,71 +898,21 @@ class RTCUtils extends Listenable {
     }
 
     /**
-     * Configures the given PeerConnection constraints to either enable or
-     * disable (according to the value of the 'enable' parameter) the
-     * 'googSuspendBelowMinBitrate' option.
-     * @param constraints the constraints on which to operate.
-     * @param enable {boolean} whether to enable or disable the suspend video
-     * option.
+     * Returns <tt>true<tt/> if a WebRTC MediaStream identified by given stream
+     * ID is considered a valid "user" stream which means that it's not a
+     * "receive only" stream nor a "mixed" JVB stream.
+     *
+     * Clients that implement Unified Plan, such as Firefox use recvonly
+     * "streams/channels/tracks" for receiving remote stream/tracks, as opposed
+     * to Plan B where there are only 3 channels: audio, video and data.
+     *
+     * @param {string} streamId The id of WebRTC MediaStream.
+     * @returns {boolean}
      */
-    setSuspendVideo(constraints, enable) {
-        if (!constraints.optional) {
-            constraints.optional = [];
-        }
-
-        // Get rid of all "googSuspendBelowMinBitrate" constraints (we assume
-        // that the elements of constraints.optional contain a single property).
-        constraints.optional
-            = constraints.optional.filter(
-                c => !c.hasOwnProperty('googSuspendBelowMinBitrate'));
-
-        // if (enable) {
-        constraints.optional.push({ googSuspendBelowMinBitrate: false });
-        // }
+    isUserStreamById(streamId) {
+        return streamId && streamId !== 'mixedmslabel' && streamId !== 'default';
     }
 }
 
-const rtcUtils = new RTCUtils();
 
-/**
- * Wraps original attachMediaStream function to set current audio output device
- * if this is supported.
- * @param {Function} origAttachMediaStream
- * @returns {Function}
- */
-function wrapAttachMediaStream(origAttachMediaStream) {
-    return function(element, stream) {
-        // eslint-disable-next-line prefer-rest-params
-        const res = origAttachMediaStream.apply(rtcUtils, arguments);
-
-        if (stream
-                && rtcUtils.isDeviceChangeAvailable('output')
-                && stream.getAudioTracks
-                && stream.getAudioTracks().length
-
-                // we skip setting audio output if there was no explicit change
-                && audioOutputChanged) {
-            element.setSinkId(rtcUtils.getAudioOutputDevice())
-                .catch(function(ex) {
-                    const err
-                        = new JitsiTrackError(ex, null, [ 'audiooutput' ]);
-
-                    GlobalOnErrorHandler.callUnhandledRejectionHandler({
-                        promise: this, // eslint-disable-line no-invalid-this
-                        reason: err
-                    });
-
-                    logger.warn(
-                        'Failed to set audio output device for the element.'
-                            + ' Default audio output device will be used'
-                            + ' instead',
-                        element,
-                        err);
-                });
-        }
-
-        return res;
-    };
-}
-
-export default rtcUtils;
+export default new RTCUtils();

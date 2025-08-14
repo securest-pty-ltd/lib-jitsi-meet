@@ -1,8 +1,8 @@
-/* global __filename */
+/* global RTCRtpScriptTransform */
 
-// import { getLogger } from 'jitsi-meet-logger';
+import { getLogger } from '@jitsi/logger';
 
-// const logger = getLogger(__filename);
+const logger = getLogger('modules/e2ee/E2EEContext');
 
 // Flag to set on senders / receivers to avoid setting up the encryption transform
 // more than once.
@@ -23,28 +23,42 @@ const kJitsiE2EE = Symbol('kJitsiE2EE');
 export default class E2EEcontext {
     /**
      * Build a new E2EE context instance, which will be used in a given conference.
+     * @param {boolean} [options.sharedKey] - whether there is a uniques key shared amoung all participants.
      */
-    constructor() {
+    constructor({ sharedKey } = {}) {
         // Determine the URL for the worker script. Relative URLs are relative to
         // the entry point, not the script that launches the worker.
-        let baseUrl = window.location.origin;
-        // const ljm = document.querySelector('script[src*="lib-jitsi-meet"]');
+        let baseUrl = '';
+        const ljm = document.querySelector('script[src*="lib-jitsi-meet"]');
 
-        // if (ljm) {
-        //     const idx = ljm.src.lastIndexOf('/');
+        if (ljm) {
+            const idx = ljm.src.lastIndexOf('/');
 
-        //     baseUrl = `${ljm.src.substring(0, idx)}/`;
-        // }
+            baseUrl = `${ljm.src.substring(0, idx)}/`;
+        }
 
-        // Initialize the E2EE worker. In order to avoid CORS issues, start the worker and have it
-        // synchronously load the JS.
-        const workerUrl = `${baseUrl}/lib-jitsi-meet.e2ee-worker.js`;
-        const workerBlob
-            = new Blob([ `importScripts("${workerUrl}");` ], { type: 'application/javascript' });
-        const blobUrl = window.URL.createObjectURL(workerBlob);
+        let workerUrl = `${baseUrl}lib-jitsi-meet.e2ee-worker.js`;
 
-        this._worker = new Worker(blobUrl, { name: 'E2EE Worker' });
-        this._worker.onerror = e => console.error(e);
+        // If there is no baseUrl then we create the worker in a normal way
+        // as you cant load scripts inside blobs from relative paths.
+        // See: https://www.html5rocks.com/en/tutorials/workers/basics/#toc-inlineworkers-loadingscripts
+        if (baseUrl && baseUrl !== '/') {
+            // Initialize the E2EE worker. In order to avoid CORS issues, start the worker and have it
+            // synchronously load the JS.
+            const workerBlob
+                = new Blob([ `importScripts("${workerUrl}");` ], { type: 'application/javascript' });
+
+            workerUrl = window.URL.createObjectURL(workerBlob);
+        }
+
+        this._worker = new Worker(workerUrl, { name: 'E2EE Worker' });
+
+        this._worker.onerror = e => logger.error(e);
+
+        this._worker.postMessage({
+            operation: 'initialize',
+            sharedKey
+        });
     }
 
     /**
@@ -57,6 +71,16 @@ export default class E2EEcontext {
         this._worker.postMessage({
             operation: 'cleanup',
             participantId
+        });
+    }
+
+    /**
+     * Cleans up all state associated with all participants in the conference. This is needed when disabling e2ee.
+     *
+     */
+    cleanupAll() {
+        this._worker.postMessage({
+            operation: 'cleanupAll'
         });
     }
 
@@ -74,16 +98,23 @@ export default class E2EEcontext {
         }
         receiver[kJitsiE2EE] = true;
 
-        const receiverStreams = receiver.createEncodedStreams();
+        if (window.RTCRtpScriptTransform) {
+            const options = {
+                operation: 'decode',
+                participantId
+            };
 
-        this._worker.postMessage({
-            operation: 'decode',
-            readableStream: receiverStreams.readable,
-            writableStream: receiverStreams.writable,
-            participantId,
-            dekkoIv: this.dekkoIv,
-            dekkoKey: this.dekkoKey
-        }, [ receiverStreams.readable, receiverStreams.writable ]);
+            receiver.transform = new RTCRtpScriptTransform(this._worker, options);
+        } else {
+            const receiverStreams = receiver.createEncodedStreams();
+
+            this._worker.postMessage({
+                operation: 'decode',
+                participantId,
+                readableStream: receiverStreams.readable,
+                writableStream: receiverStreams.writable
+            }, [ receiverStreams.readable, receiverStreams.writable ]);
+        }
     }
 
     /**
@@ -100,16 +131,35 @@ export default class E2EEcontext {
         }
         sender[kJitsiE2EE] = true;
 
-        const senderStreams = sender.createEncodedStreams();
+        if (window.RTCRtpScriptTransform) {
+            const options = {
+                operation: 'encode',
+                participantId
+            };
 
+            sender.transform = new RTCRtpScriptTransform(this._worker, options);
+        } else {
+            const senderStreams = sender.createEncodedStreams();
+
+            this._worker.postMessage({
+                operation: 'encode',
+                participantId,
+                readableStream: senderStreams.readable,
+                writableStream: senderStreams.writable
+            }, [ senderStreams.readable, senderStreams.writable ]);
+        }
+    }
+
+    /**
+     * Set the E2EE enabled state.
+     *
+     * @param {boolean} enabled - whether E2EE is enabled or not.
+     */
+    setEnabled(enabled) {
         this._worker.postMessage({
-            operation: 'encode',
-            readableStream: senderStreams.readable,
-            writableStream: senderStreams.writable,
-            participantId,
-            dekkoIv: this.dekkoIv,
-            dekkoKey: this.dekkoKey
-        }, [ senderStreams.readable, senderStreams.writable ]);
+            enabled,
+            operation: 'setEnabled'
+        });
     }
 
     /**
@@ -120,11 +170,11 @@ export default class E2EEcontext {
      * @param {Number} keyIndex - the key index.
      */
     setKey(participantId, key, keyIndex) {
-        // this._worker.postMessage({
-        //     operation: 'setKey',
-        //     participantId,
-        //     key,
-        //     keyIndex
-        // });
+        this._worker.postMessage({
+            key,
+            keyIndex,
+            operation: 'setKey',
+            participantId
+        });
     }
 }

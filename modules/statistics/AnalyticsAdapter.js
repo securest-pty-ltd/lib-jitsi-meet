@@ -1,4 +1,4 @@
-import { getLogger } from 'jitsi-meet-logger';
+import { getLogger } from '@jitsi/logger';
 
 import {
     TYPE_OPERATIONAL,
@@ -10,8 +10,7 @@ import browser from '../browser';
 
 const MAX_CACHE_SIZE = 100;
 
-// eslist-disable-line no-undef
-const logger = getLogger(__filename);
+const logger = getLogger('modules/statistics/AnalyticsAdapter');
 
 /**
  * This class provides an API to lib-jitsi-meet and its users for sending
@@ -104,8 +103,8 @@ class AnalyticsAdapter {
         this.conferenceName = '';
 
         this.addPermanentProperties({
-            'user_agent': navigator.userAgent,
-            'browser_name': browser.getName()
+            'browser_name': browser.getName(),
+            'user_agent': navigator.userAgent
         });
     }
 
@@ -113,7 +112,7 @@ class AnalyticsAdapter {
      * Dispose analytics. Clears all handlers.
      */
     dispose() {
-        logger.warn('Disposing of analytics adapter.');
+        logger.debug('Disposing of analytics adapter.');
 
         if (this.analyticsHandlers && this.analyticsHandlers.size > 0) {
             this.analyticsHandlers.forEach(handler => {
@@ -217,11 +216,11 @@ class AnalyticsAdapter {
 
         if (typeof eventName === 'string') {
             event = {
-                type: TYPE_OPERATIONAL,
                 action: eventName,
                 actionSubject: eventName,
+                attributes: properties,
                 source: eventName,
-                attributes: properties
+                type: TYPE_OPERATIONAL
             };
         } else if (typeof eventName === 'object') {
             event = eventName;

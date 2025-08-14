@@ -1,21 +1,15 @@
-/* global __filename */
+import { isEqual } from 'lodash-es';
 
-import { getLogger } from 'jitsi-meet-logger';
-
-import MediaDirection from '../../service/RTC/MediaDirection';
-import * as MediaType from '../../service/RTC/MediaType';
+import { MediaDirection } from '../../service/RTC/MediaDirection';
+import { MediaType } from '../../service/RTC/MediaType';
+import browser from '../browser';
 
 import { SdpTransformWrap } from './SdpTransformUtil';
 
-const logger = getLogger(__filename);
-
 /**
- * Fakes local SDP exposed to {@link JingleSessionPC} through the local
- * description getter. Modifies the SDP, so that it will contain muted local
- * video tracks description, even though their underlying {MediaStreamTrack}s
- * are no longer in the WebRTC peerconnection. That prevents from SSRC updates
- * being sent to Jicofo/remote peer and prevents sRD/sLD cycle on the remote
- * side.
+ * Fakes local SDP exposed to {@link JingleSessionPC} through the local description getter. Modifies the SDP, so that
+ * the stream identifiers are unique across all of the local PeerConnections and that the source names and video types
+ * are injected so that Jicofo can use them to identify the sources.
  */
 export default class LocalSdpMunger {
 
@@ -31,293 +25,139 @@ export default class LocalSdpMunger {
     }
 
     /**
-     * Makes sure that muted local video tracks associated with the parent
-     * {@link TraceablePeerConnection} are described in the local SDP. It's done
-     * in order to prevent from sending 'source-remove'/'source-add' Jingle
-     * notifications when local video track is muted (<tt>MediaStream</tt> is
-     * removed from the peerconnection).
+     * Updates or adds a 'msid' attribute for the local sources in the SDP. Also adds 'sourceName' and 'videoType'
+     * (if applicable) attributes. All other source attributes like 'cname', 'label' and 'mslabel' are removed since
+     * these are not processed by Jicofo.
      *
-     * NOTE 1 video track is assumed
-     *
-     * @param {SdpTransformWrap} transformer the transformer instance which will
-     * be used to process the SDP.
-     * @return {boolean} <tt>true</tt> if there were any modifications to
-     * the SDP wrapped by <tt>transformer</tt>.
-     * @private
-     */
-    _addMutedLocalVideoTracksToSDP(transformer) {
-        // Go over each video tracks and check if the SDP has to be changed
-        const localVideos = this.tpc.getLocalTracks(MediaType.VIDEO);
-
-        if (!localVideos.length) {
-            return false;
-        } else if (localVideos.length !== 1) {
-            logger.error(
-                `${this.tpc} there is more than 1 video track ! `
-                    + 'Strange things may happen !', localVideos);
-        }
-
-        const videoMLine = transformer.selectMedia('video');
-
-        if (!videoMLine) {
-            logger.debug(
-                `${this.tpc} unable to hack local video track SDP`
-                    + '- no "video" media');
-
-            return false;
-        }
-
-        let modified = false;
-
-        for (const videoTrack of localVideos) {
-            const muted = videoTrack.isMuted();
-            const mediaStream = videoTrack.getOriginalStream();
-
-            // During the mute/unmute operation there are periods of time when
-            // the track's underlying MediaStream is not added yet to
-            // the PeerConnection. The SDP needs to be munged in such case.
-            const isInPeerConnection
-                = mediaStream && this.tpc.isMediaStreamInPc(mediaStream);
-            const shouldFakeSdp = muted || !isInPeerConnection;
-
-            if (!shouldFakeSdp) {
-                continue; // eslint-disable-line no-continue
-            }
-
-            // Inject removed SSRCs
-            const requiredSSRCs
-                = this.tpc.isSimulcastOn()
-                    ? this.tpc.simulcast.ssrcCache
-                    : [ this.tpc.sdpConsistency.cachedPrimarySsrc ];
-
-            if (!requiredSSRCs.length) {
-                logger.error(`No SSRCs stored for: ${videoTrack} in ${this.tpc}`);
-
-                continue; // eslint-disable-line no-continue
-            }
-
-            modified = true;
-
-            // We need to fake sendrecv.
-            // NOTE the SDP produced here goes only to Jicofo and is never set
-            // as localDescription. That's why
-            // TraceablePeerConnection.mediaTransferActive is ignored here.
-            videoMLine.direction = MediaDirection.SENDRECV;
-
-            // Check if the recvonly has MSID
-            const primarySSRC = requiredSSRCs[0];
-
-            // FIXME The cname could come from the stream, but may turn out to
-            // be too complex. It is fine to come up with any value, as long as
-            // we only care about the actual SSRC values when deciding whether
-            // or not an update should be sent.
-            const primaryCname = `injected-${primarySSRC}`;
-
-            for (const ssrcNum of requiredSSRCs) {
-                // Remove old attributes
-                videoMLine.removeSSRC(ssrcNum);
-
-                // Inject
-                videoMLine.addSSRCAttribute({
-                    id: ssrcNum,
-                    attribute: 'cname',
-                    value: primaryCname
-                });
-                videoMLine.addSSRCAttribute({
-                    id: ssrcNum,
-                    attribute: 'msid',
-                    value: videoTrack.storedMSID
-                });
-            }
-            if (requiredSSRCs.length > 1) {
-                const group = {
-                    ssrcs: requiredSSRCs.join(' '),
-                    semantics: 'SIM'
-                };
-
-                if (!videoMLine.findGroup(group.semantics, group.ssrcs)) {
-                    // Inject the group
-                    videoMLine.addSSRCGroup(group);
-                }
-            }
-
-            // Insert RTX
-            // FIXME in P2P RTX is used by Chrome regardless of config option
-            // status. Because of that 'source-remove'/'source-add'
-            // notifications are still sent to remove/add RTX SSRC and FID group
-            if (!this.tpc.options.disableRtx) {
-                this.tpc.rtxModifier.modifyRtxSsrcs2(videoMLine);
-            }
-        }
-
-        return modified;
-    }
-
-    /**
-     * Returns a string that can be set as the MSID attribute for a source.
-     *
-     * @param {string} mediaType - Media type of the source.
-     * @param {string} trackId - Id of the MediaStreamTrack associated with the source.
-     * @param {string} streamId - Id of the MediaStream associated with the source.
-     * @returns {string|null}
-     */
-    _generateMsidAttribute(mediaType, trackId, streamId = null) {
-        if (!(mediaType && trackId)) {
-            logger.warn(`Unable to munge local MSID - track id=${trackId} or media type=${mediaType} is missing`);
-
-            return null;
-        }
-        const pcId = this.tpc.id;
-
-        // Handle a case on Firefox when the browser doesn't produce a 'a:ssrc' line with the 'msid' attribute or has
-        // '-' for the stream id part of the msid line. Jicofo needs an unique identifier to be associated with a ssrc
-        // and uses the msid for that.
-        if (streamId === '-' || !streamId) {
-            return `${this.localEndpointId}-${mediaType}-${pcId} ${trackId}-${pcId}`;
-        }
-
-        return `${streamId}-${pcId} ${trackId}-${pcId}`;
-    }
-
-    /**
-     * Modifies 'cname', 'msid', 'label' and 'mslabel' by appending
-     * the id of {@link LocalSdpMunger#tpc} at the end, preceding by a dash
-     * sign.
-     *
-     * @param {MLineWrap} mediaSection - The media part (audio or video) of the
-     * session description which will be modified in place.
+     * @param {MLineWrap} mediaSection - The media part (audio or video) of the session description which will be
+     * modified in place.
      * @returns {void}
      * @private
      */
-    _transformMediaIdentifiers(mediaSection) {
-        const pcId = this.tpc.id;
+    _transformMediaIdentifiers(mediaSection, ssrcMap) {
+        const mediaType = mediaSection.mLine.type;
+        const mediaDirection = mediaSection.mLine.direction;
+        const sources = [ ...new Set(mediaSection.mLine.ssrcs?.map(s => s.id)) ];
+        let trackId = mediaSection.mLine.msid?.split(' ')[1];
+        let sourceName;
 
-        for (const ssrcLine of mediaSection.ssrcs) {
-            switch (ssrcLine.attribute) {
-            case 'cname':
-            case 'label':
-            case 'mslabel':
-                ssrcLine.value = ssrcLine.value && `${ssrcLine.value}-${pcId}`;
-                break;
-            case 'msid': {
-                if (ssrcLine.value) {
-                    const streamAndTrackIDs = ssrcLine.value.split(' ');
+        if (ssrcMap.size) {
+            const sortedSources = sources.slice().sort();
 
-                    if (streamAndTrackIDs.length === 2) {
-                        ssrcLine.value
-                            = this._generateMsidAttribute(
-                                mediaSection.mLine?.type,
-                                streamAndTrackIDs[1],
-                                streamAndTrackIDs[0]);
+            for (const [ id, trackSsrcs ] of ssrcMap.entries()) {
+                if (isEqual(sortedSources, [ ...trackSsrcs.ssrcs ].sort())) {
+                    sourceName = id;
+                }
+            }
+            for (const source of sources) {
+                if ((mediaDirection === MediaDirection.SENDONLY || mediaDirection === MediaDirection.SENDRECV)
+                    && sourceName) {
+                    const msid = mediaSection.ssrcs.find(ssrc => ssrc.id === source && ssrc.attribute === 'msid');
+
+                    if (msid) {
+                        trackId = msid.value.split(' ')[1];
+                    }
+                    const generatedMsid = `${ssrcMap.get(sourceName).msid}-${this.tpc.id} ${trackId}-${this.tpc.id}`;
+                    const existingMsid = mediaSection.ssrcs
+                        .find(ssrc => ssrc.id === source && ssrc.attribute === 'msid');
+
+                    // Always overwrite msid since we want the msid to be in this format even if the browser generates
+                    // one. '<endpoint_id>-<mediaType>-<trackIndex>-<tpcId>' example - d8ff91-video-0-1
+                    if (existingMsid) {
+                        existingMsid.value = generatedMsid;
                     } else {
-                        logger.warn(`Unable to munge local MSID - weird format detected: ${ssrcLine.value}`);
+                        mediaSection.ssrcs.push({
+                            attribute: 'msid',
+                            id: source,
+                            value: generatedMsid
+                        });
+                    }
+
+                    // Inject source names as a=ssrc:3124985624 name:endpointA-v0
+                    mediaSection.ssrcs.push({
+                        attribute: 'name',
+                        id: source,
+                        value: sourceName
+                    });
+
+                    const videoType = this.tpc.getLocalVideoTracks()
+                        .find(track => track.getSourceName() === sourceName)
+                        ?.getVideoType();
+
+                    if (mediaType === MediaType.VIDEO && videoType) {
+                        // Inject videoType as a=ssrc:1234 videoType:desktop.
+                        mediaSection.ssrcs.push({
+                            attribute: 'videoType',
+                            id: source,
+                            value: videoType
+                        });
                     }
                 }
-                break;
-            }
             }
         }
 
-        // Additional transformations related to MSID are applicable to Unified-plan implementation only.
-        if (!this.tpc.usesUnifiedPlan()) {
-            return;
+        // Ignore the 'label' and 'mslabel' attributes.
+        mediaSection.ssrcs
+            = mediaSection.ssrcs.filter(ssrc => ssrc.attribute !== 'label' && ssrc.attribute !== 'mslabel');
+
+        // Remove the 'cname' attribute on Firefox as a=ssrc line with only 'cname' attribute are present in the SDP
+        // for recvonly SSRCs generated by createAnswer. These do not have to be signaled to the peers.
+        if (browser.isFirefox()) {
+            mediaSection.ssrcs = mediaSection.ssrcs.filter(ssrc => ssrc.attribute !== 'cname');
         }
 
-        // If the msid attribute is missing, then remove the ssrc from the transformed description so that a
-        // source-remove is signaled to Jicofo. This happens when the direction of the transceiver (or m-line)
-        // is set to 'inactive' or 'recvonly' on Firefox, Chrome (unified) and Safari.
-        const mediaDirection = mediaSection.mLine?.direction;
-
-        if (mediaDirection === MediaDirection.RECVONLY || mediaDirection === MediaDirection.INACTIVE) {
+        // On FF when the user has started muted create answer will generate a recv only SSRC. We don't want to signal
+        // this SSRC in order to reduce the load of the xmpp server for large calls. Therefore the SSRC needs to be
+        // removed from the SDP.
+        //
+        // For all other use cases (when the user has had media but then the user has stopped it) we want to keep the
+        // receive only SSRCs in the SDP. Otherwise source-remove will be triggered and the next time the user add a
+        // track we will reuse the SSRCs and send source-add with the same SSRCs. This is problematic because of issues
+        // on Chrome and FF (https://bugzilla.mozilla.org/show_bug.cgi?id=1768729) when removing and then adding the
+        // same SSRC in the remote sdp the remote track is not rendered.
+        if (browser.isFirefox()
+            && (mediaDirection === MediaDirection.RECVONLY || mediaDirection === MediaDirection.INACTIVE)
+            && (
+                (mediaType === MediaType.VIDEO && !this.tpc._hasHadVideoTrack)
+                || (mediaType === MediaType.AUDIO && !this.tpc._hasHadAudioTrack)
+            )
+        ) {
             mediaSection.ssrcs = undefined;
             mediaSection.ssrcGroups = undefined;
-
-        // Add the msid attribute if it is missing when the direction is sendrecv/sendonly. Firefox doesn't produce a
-        // a=ssrc line with msid attribute for p2p connection.
-        } else {
-            const msidLine = mediaSection.mLine?.msid;
-            const trackId = msidLine && msidLine.split(' ')[1];
-            const sources = [ ...new Set(mediaSection.mLine?.ssrcs?.map(s => s.id)) ];
-
-            for (const source of sources) {
-                const msidExists = mediaSection.ssrcs
-                    .find(ssrc => ssrc.id === source && ssrc.attribute === 'msid');
-
-                if (!msidExists) {
-                    const generatedMsid = this._generateMsidAttribute(mediaSection.mLine?.type, trackId);
-
-                    mediaSection.ssrcs.push({
-                        id: source,
-                        attribute: 'msid',
-                        value: generatedMsid
-                    });
-                }
-            }
         }
     }
 
     /**
-     * Maybe modifies local description to fake local video tracks SDP when
-     * those are muted.
+     * This transformation will make sure that stream identifiers are unique across all of the local PeerConnections
+     * even if the same stream is used by multiple instances at the same time. It also injects 'sourceName' and
+     * 'videoType' attribute.
      *
-     * @param {object} desc the WebRTC SDP object instance for the local
-     * description.
-     * @returns {RTCSessionDescription}
-     */
-    maybeAddMutedLocalVideoTracksToSDP(desc) {
-        if (!desc) {
-            throw new Error('No local description passed in.');
-        }
-
-        const transformer = new SdpTransformWrap(desc.sdp);
-
-        if (this._addMutedLocalVideoTracksToSDP(transformer)) {
-            return new RTCSessionDescription({
-                type: desc.type,
-                sdp: transformer.toRawSDP()
-            });
-        }
-
-        return desc;
-    }
-
-    /**
-     * This transformation will make sure that stream identifiers are unique
-     * across all of the local PeerConnections even if the same stream is used
-     * by multiple instances at the same time.
-     * Each PeerConnection assigns different SSRCs to the same local
-     * MediaStream, but the MSID remains the same as it's used to identify
-     * the stream by the WebRTC backend. The transformation will append
-     * {@link TraceablePeerConnection#id} at the end of each stream's identifier
-     * ("cname", "msid", "label" and "mslabel").
-     *
-     * @param {RTCSessionDescription} sessionDesc - The local session
-     * description (this instance remains unchanged).
+     * @param {RTCSessionDescription} sessionDesc - The local session description (this instance remains unchanged).
+     * @param {Map<string, TPCSSRCInfo>} ssrcMap - The SSRC and source map for the local tracks.
      * @return {RTCSessionDescription} - Transformed local session description
      * (a modified copy of the one given as the input).
      */
-    transformStreamIdentifiers(sessionDesc) {
-        // FIXME similar check is probably duplicated in all other transformers
+    transformStreamIdentifiers(sessionDesc, ssrcMap) {
         if (!sessionDesc || !sessionDesc.sdp || !sessionDesc.type) {
             return sessionDesc;
         }
 
         const transformer = new SdpTransformWrap(sessionDesc.sdp);
-        const audioMLine = transformer.selectMedia('audio');
+        const audioMLine = transformer.selectMedia(MediaType.AUDIO)?.[0];
 
         if (audioMLine) {
-            this._transformMediaIdentifiers(audioMLine);
+            this._transformMediaIdentifiers(audioMLine, ssrcMap);
         }
 
-        const videoMLine = transformer.selectMedia('video');
+        const videoMlines = transformer.selectMedia(MediaType.VIDEO);
 
-        if (videoMLine) {
-            this._transformMediaIdentifiers(videoMLine);
+        for (const videoMLine of videoMlines) {
+            this._transformMediaIdentifiers(videoMLine, ssrcMap);
         }
 
-        return new RTCSessionDescription({
-            type: sessionDesc.type,
-            sdp: transformer.toRawSDP()
-        });
+        return {
+            sdp: transformer.toRawSDP(),
+            type: sessionDesc.type
+        };
     }
 }

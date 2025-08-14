@@ -1,9 +1,10 @@
-/* global $ */
+import { Strophe } from 'strophe.js'; // eslint-disable-line camelcase
 
-import { b64_sha1, Strophe } from 'strophe.js'; // eslint-disable-line camelcase
-
-import XMPPEvents from '../../service/xmpp/XMPPEvents';
+import { XMPPEvents } from '../../service/xmpp/XMPPEvents';
 import Listenable from '../util/Listenable';
+import $ from '../util/XMLParser';
+
+import sha1 from './sha1';
 
 /**
  * The property
@@ -47,7 +48,7 @@ function generateSha(identities, features) {
     const sortedFeatures = features.sort().reduce(
         (tmp, feature) => `${tmp + feature}<`, '');
 
-    return b64_sha1(sortedIdentities + sortedFeatures);
+    return sha1.b64_sha1(sortedIdentities + sortedFeatures);
 }
 
 /**
@@ -63,9 +64,9 @@ export function parseDiscoInfo(node) {
         .each((_, el) => features.add(el.getAttribute('var')));
     $(node).find('>query>identity')
         .each((_, el) => identities.add({
-            type: el.getAttribute('type'),
+            category: el.getAttribute('category'),
             name: el.getAttribute('name'),
-            category: el.getAttribute('category')
+            type: el.getAttribute('type')
         }));
 
     return {
@@ -181,8 +182,8 @@ export default class Caps extends Listenable {
 
             this.externalFeatures.forEach(f => {
                 children.push({
-                    'tagName': 'feature',
-                    attributes: { 'var': f }
+                    attributes: { 'var': f },
+                    'tagName': 'feature'
                 });
             });
 
@@ -194,7 +195,7 @@ export default class Caps extends Listenable {
      * Returns a set with the features for a host.
      * @param {String} jid the jid of the host
      * @param {int} timeout the timeout in ms for reply from the host.
-     * @returns {Promise<Set<String>, Error>}
+     * @returns {Promise<Set<String>>}
      */
     getFeaturesAndIdentities(jid, node, timeout = 5000) {
         return this._getDiscoInfo(jid, node, timeout);
@@ -244,10 +245,10 @@ export default class Caps extends Listenable {
     _fixChatRoomPresenceMap(room) {
         room.addOrReplaceInPresence('c', {
             attributes: {
-                xmlns: Strophe.NS.CAPS,
                 hash: HASH,
                 node: this.node,
-                ver: this.version
+                ver: this.version,
+                xmlns: Strophe.NS.CAPS
             }
         });
     }

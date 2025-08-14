@@ -1,14 +1,15 @@
-import { getLogger } from 'jitsi-meet-logger';
+import { getLogger } from '@jitsi/logger';
 import { $pres, Strophe } from 'strophe.js';
-import 'strophejs-plugin-stream-management';
 
+import { MAX_CONNECTION_RETRIES } from '../../service/connectivity/Constants';
 import Listenable from '../util/Listenable';
 
 import ResumeTask from './ResumeTask';
 import LastSuccessTracker from './StropheLastSuccess';
 import PingConnectionPlugin from './strophe.ping';
+import './strophe.stream-management';
 
-const logger = getLogger(__filename);
+const logger = getLogger('modules/xmpp/XmppConnection');
 
 /**
  * The lib-jitsi-meet layer for {@link Strophe.Connection}.
@@ -21,8 +22,8 @@ export default class XmppConnection extends Listenable {
      */
     static get Events() {
         return {
-            CONN_STATUS_CHANGED: 'CONN_STATUS_CHANGED',
-            CONN_SHARD_CHANGED: 'CONN_SHARD_CHANGED'
+            CONN_SHARD_CHANGED: 'CONN_SHARD_CHANGED',
+            CONN_STATUS_CHANGED: 'CONN_STATUS_CHANGED'
         };
     }
 
@@ -62,6 +63,18 @@ export default class XmppConnection extends Listenable {
         };
 
         this._stropheConn = new Strophe.Connection(serviceUrl);
+
+        // The mechanisms priorities as defined by Strophe
+        // *      Mechanism       Priority
+        // *      ------------------------
+        // *      SCRAM-SHA-1     60
+        // *      PLAIN           50
+        // *      ANONYMOUS       20
+        this._stropheConn.registerSASLMechanisms([
+            Strophe.SASLAnonymous,
+            Strophe.SASLPlain,
+            Strophe.SASLSHA1
+        ]);
         this._usesWebsocket = serviceUrl.startsWith('ws:') || serviceUrl.startsWith('wss:');
 
         // The default maxRetries is 5, which is too long.
@@ -201,6 +214,19 @@ export default class XmppConnection extends Listenable {
     }
 
     /**
+     * Sets new value for shard.
+     * @param value the new shard value.
+     */
+    set shard(value) {
+        this._options.shard = value;
+
+        // shard setting changed so let's schedule a new keep-alive check if connected
+        if (this._oneSuccessfulConnect) {
+            this._maybeStartWSKeepAlive();
+        }
+    }
+
+    /**
      * Returns the current connection status.
      *
      * @returns {Strophe.Status}
@@ -224,10 +250,19 @@ export default class XmppConnection extends Listenable {
     /**
      * See {@link Strophe.Connection.addHandler}
      *
-     * @returns {void}
+     * @returns {Object} - handler for the connection.
      */
     addHandler(...args) {
-        this._stropheConn.addHandler(...args);
+        return this._stropheConn.addHandler(...args);
+    }
+
+    /**
+     * See {@link Strophe.Connection.deleteHandler}
+     *
+     * @returns {void}
+     */
+    deleteHandler(...args) {
+        this._stropheConn.deleteHandler(...args);
     }
 
     /* eslint-disable max-params */
@@ -473,10 +508,10 @@ export default class XmppConnection extends Listenable {
      */
     send(stanza) {
         if (!this.connected) {
-          // throw new Error('Not connected');
-          window.dispatchEvent(new Event('DEKKO_STROPHE_DISCONNECTED'));
-          console.error('Strophe Not connected');
-          return;
+            logger.error(`Trying to send stanza while not connected. Status:${this._status} Proto:${
+                this.isUsingWebSocket ? this._stropheConn?._proto?.socket?.readyState : 'bosh'
+            }`);
+            throw new Error('Not connected');
         }
         this._stropheConn.send(stanza);
     }
@@ -506,8 +541,10 @@ export default class XmppConnection extends Listenable {
      * which would fail immediately if disconnected).
      *
      * @param {Element} iq - The IQ to send.
-     * @param {number} timeout - How long to wait for the response. The time when the connection is reconnecting is
-     * included, which means that the IQ may never be sent and still fail with a timeout.
+     * @param {Object} options - Options object
+     * @param {options.timeout} timeout - How long to wait for the response.
+     * The time when the connection is reconnecting is included, which means that
+     * the IQ may never be sent and still fail with a timeout.
      */
     sendIQ2(iq, { timeout }) {
         return new Promise((resolve, reject) => {
@@ -520,8 +557,8 @@ export default class XmppConnection extends Listenable {
             } else {
                 const deferred = {
                     iq,
-                    resolve,
                     reject,
+                    resolve,
                     start: Date.now(),
                     timeout: setTimeout(() => {
                         // clears the IQ on timeout and invalidates the deferred task
@@ -587,8 +624,8 @@ export default class XmppConnection extends Listenable {
                 type: 'terminate'
             });
         const pres = $pres({
-            xmlns: Strophe.NS.CLIENT,
-            type: 'unavailable'
+            type: 'unavailable',
+            xmlns: Strophe.NS.CLIENT
         });
 
         body.cnode(pres.tree());
@@ -620,7 +657,13 @@ export default class XmppConnection extends Listenable {
         if (resumeToken) {
             this._resumeTask.schedule();
 
-            return true;
+            const r = this._resumeTask.retryCount <= MAX_CONNECTION_RETRIES;
+
+            if (!r) {
+                logger.warn(`Maximum resume tries reached (${MAX_CONNECTION_RETRIES}), giving up.`);
+            }
+
+            return r;
         }
 
         return false;

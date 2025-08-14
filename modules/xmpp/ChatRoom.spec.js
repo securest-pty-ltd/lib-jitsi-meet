@@ -1,8 +1,9 @@
 import { $pres } from 'strophe.js';
 
-import XMPPEvents from '../../service/xmpp/XMPPEvents';
+import { XMPPEvents } from '../../service/xmpp/XMPPEvents';
 
 import ChatRoom, { parser } from './ChatRoom';
+import Moderator from './moderator';
 
 // This rule makes creating the xml elements take up way more
 // space than necessary.
@@ -138,6 +139,9 @@ describe('ChatRoom', () => {
 
         beforeEach(() => {
             const xmpp = {
+                moderator: new Moderator({
+                    options: {}
+                }),
                 options: {},
                 addListener: () => {} // eslint-disable-line no-empty-function
             };
@@ -161,12 +165,15 @@ describe('ChatRoom', () => {
             const pres = new DOMParser().parseFromString(presStr, 'text/xml').documentElement;
 
             room.onPresence(pres);
-            expect(emitterSpy.calls.count()).toEqual(2);
+            expect(emitterSpy.calls.count()).toEqual(3);
             expect(emitterSpy.calls.argsFor(0)).toEqual([
                 XMPPEvents.PRESENCE_RECEIVED,
                 jasmine.any(Object)
             ]);
             expect(emitterSpy.calls.argsFor(1)).toEqual([
+                XMPPEvents.MUC_JOIN_IN_PROGRESS
+            ]);
+            expect(emitterSpy.calls.argsFor(2)).toEqual([
                 XMPPEvents.MUC_MEMBER_JOINED,
                 'fromjid',
                 undefined, // nick
@@ -178,7 +185,8 @@ describe('ChatRoom', () => {
                 undefined,
                 'fulljid',
                 undefined, // features
-                0 // isReplaceParticipant
+                0, // isReplaceParticipant
+                undefined // isSilent
             ]);
         });
 
@@ -192,11 +200,15 @@ describe('ChatRoom', () => {
             const pres = new DOMParser().parseFromString(presStr, 'text/xml').documentElement;
 
             room.onPresence(pres);
-            expect(emitterSpy.calls.count()).toEqual(2);
+            expect(emitterSpy.calls.count()).toEqual(3);
             expect(emitterSpy.calls.argsFor(0)).toEqual([
                 XMPPEvents.PRESENCE_RECEIVED,
                 jasmine.any(Object)
             ]);
+            expect(emitterSpy.calls.argsFor(1)).toEqual([
+                XMPPEvents.MUC_JOIN_IN_PROGRESS
+            ]);
+
             expect(emitterSpy).toHaveBeenCalledWith(
                 XMPPEvents.MUC_MEMBER_JOINED,
                 'fromjid',
@@ -209,7 +221,8 @@ describe('ChatRoom', () => {
                 undefined,
                 'jid=attr',
                 undefined, // features
-                0); // isReplaceParticipant
+                0, // isReplaceParticipant
+                undefined); // isSilent
         });
 
         it('parses muc user replacing other user correctly', () => {
@@ -223,10 +236,13 @@ describe('ChatRoom', () => {
             const pres = new DOMParser().parseFromString(presStr, 'text/xml').documentElement;
 
             room.onPresence(pres);
-            expect(emitterSpy.calls.count()).toEqual(2);
+            expect(emitterSpy.calls.count()).toEqual(3);
             expect(emitterSpy.calls.argsFor(0)).toEqual([
                 XMPPEvents.PRESENCE_RECEIVED,
                 jasmine.any(Object)
+            ]);
+            expect(emitterSpy.calls.argsFor(1)).toEqual([
+                XMPPEvents.MUC_JOIN_IN_PROGRESS
             ]);
             expect(emitterSpy).toHaveBeenCalledWith(
               XMPPEvents.MUC_MEMBER_JOINED,
@@ -240,7 +256,8 @@ describe('ChatRoom', () => {
               undefined,
               'jid=attr',
               undefined, // features
-              1); // isReplaceParticipant
+              1, // isReplaceParticipant
+              undefined); // isSilent
         });
 
         it('parses identity correctly', () => {
@@ -271,12 +288,15 @@ describe('ChatRoom', () => {
             };
 
             room.onPresence(pres);
-            expect(emitterSpy.calls.count()).toEqual(2);
+            expect(emitterSpy.calls.count()).toEqual(3);
             expect(emitterSpy.calls.argsFor(0)).toEqual([
                 XMPPEvents.PRESENCE_RECEIVED,
                 jasmine.any(Object)
             ]);
             expect(emitterSpy.calls.argsFor(1)).toEqual([
+                XMPPEvents.MUC_JOIN_IN_PROGRESS
+            ]);
+            expect(emitterSpy.calls.argsFor(2)).toEqual([
                 XMPPEvents.MUC_MEMBER_JOINED,
                 'fromjid',
                 undefined, // nick
@@ -288,7 +308,8 @@ describe('ChatRoom', () => {
                 undefined,
                 'fulljid',
                 undefined, // features
-                0 // isReplaceParticipant
+                0, // isReplaceParticipant
+                undefined // isSilent
             ]);
         });
 
@@ -305,12 +326,15 @@ describe('ChatRoom', () => {
             const pres = new DOMParser().parseFromString(presStr, 'text/xml').documentElement;
 
             room.onPresence(pres);
-            expect(emitterSpy.calls.count()).toEqual(2);
+            expect(emitterSpy.calls.count()).toEqual(3);
             expect(emitterSpy.calls.argsFor(0)).toEqual([
                 XMPPEvents.PRESENCE_RECEIVED,
                 jasmine.any(Object)
             ]);
             expect(emitterSpy.calls.argsFor(1)).toEqual([
+                XMPPEvents.MUC_JOIN_IN_PROGRESS
+            ]);
+            expect(emitterSpy.calls.argsFor(2)).toEqual([
                 XMPPEvents.MUC_MEMBER_JOINED,
                 'fromjid',
                 undefined, // nick
@@ -322,7 +346,8 @@ describe('ChatRoom', () => {
                 expectedBotType,
                 'fulljid',
                 undefined, // features
-                0 // isReplaceParticipant
+                0, // isReplaceParticipant
+                undefined // isSilent
             ]);
         });
 
@@ -334,6 +359,9 @@ describe('ChatRoom', () => {
 
         beforeEach(() => {
             const xmpp = {
+                moderator: new Moderator({
+                    options: {}
+                }),
                 options: {},
                 addListener: () => {} // eslint-disable-line no-empty-function
             };
@@ -376,5 +404,144 @@ describe('ChatRoom', () => {
                 '</message>');
         });
     });
-});
 
+    describe('onMessage - reaction', () => {
+        let room;
+        let emitterSpy;
+
+        beforeEach(() => {
+            const xmpp = {
+                moderator: new Moderator({
+                    options: {}
+                }),
+                options: {},
+                addListener: () => {} // eslint-disable-line no-empty-function
+            };
+
+            room = new ChatRoom(
+                {} /* connection */,
+                'jid',
+                'password',
+                xmpp,
+                {} /* options */);
+            emitterSpy = spyOn(room.eventEmitter, 'emit');
+        });
+
+        it('parses reactions correctly', () => {
+            const msgStr = '' +
+                '<message to="jid" type="groupchat" xmlns="jabber:client">' +
+                    '<reactions id="mdgId123" xmlns="urn:xmpp:reactions:0">' +
+                        '<reaction>👍</reaction>' +
+                    '</reactions>' +
+                    '<store xmlns="urn:xmpp:hints"/>' +
+                '</message>';
+            const msg = new DOMParser().parseFromString(msgStr, 'text/xml').documentElement;
+
+            room.onMessage(msg, 'fromjid');
+            expect(emitterSpy.calls.count()).toEqual(1);
+            expect(emitterSpy).toHaveBeenCalledWith(
+                XMPPEvents.REACTION_RECEIVED,
+                'fromjid',
+                ['👍'],
+                'mdgId123');
+        });
+        it('parses multiple reactions correctly', () => {
+            const msgStr = '' +
+                '<message to="jid" type="groupchat" xmlns="jabber:client">' +
+                    '<reactions id="mdgId123" xmlns="urn:xmpp:reactions:0">' +
+                        '<reaction>👍</reaction>' +
+                        '<reaction>👎</reaction>' +
+                    '</reactions>' +
+                    '<store xmlns="urn:xmpp:hints"/>' +
+                '</message>';
+            const msg = new DOMParser().parseFromString(msgStr, 'text/xml').documentElement;
+
+            room.onMessage(msg, 'fromjid');
+            expect(emitterSpy.calls.count()).toEqual(1);
+            expect(emitterSpy).toHaveBeenCalledWith(
+                XMPPEvents.REACTION_RECEIVED,
+                'fromjid',
+                ['👍', '👎'],
+                'mdgId123');
+        });
+        it('parses partially bogus reactions correctly', () => {
+            const msgStr = '' +
+                '<message to="jid" type="groupchat" xmlns="jabber:client">' +
+                    '<reactions id="mdgId123" xmlns="urn:xmpp:reactions:0">' +
+                        '<reaction>👍 foo bar baz</reaction>' +
+                    '</reactions>' +
+                    '<store xmlns="urn:xmpp:hints"/>' +
+                '</message>';
+            const msg = new DOMParser().parseFromString(msgStr, 'text/xml').documentElement;
+
+            room.onMessage(msg, 'fromjid');
+            expect(emitterSpy.calls.count()).toEqual(1);
+            expect(emitterSpy).toHaveBeenCalledWith(
+                XMPPEvents.REACTION_RECEIVED,
+                'fromjid',
+                ['👍'],
+                'mdgId123');
+        });
+        it('parses bogus reactions correctly', () => {
+            const msgStr = '' +
+                '<message to="jid" type="groupchat" xmlns="jabber:client">' +
+                    '<reactions id="mdgId123" xmlns="urn:xmpp:reactions:0">' +
+                        '<reaction>foo bar baz</reaction>' +
+                    '</reactions>' +
+                    '<store xmlns="urn:xmpp:hints"/>' +
+                '</message>';
+            const msg = new DOMParser().parseFromString(msgStr, 'text/xml').documentElement;
+
+            room.onMessage(msg, 'fromjid');
+            expect(emitterSpy.calls.count()).toEqual(0);
+        });
+    });
+
+    describe('sendReaction', () => {
+        let room;
+        let connectionSpy;
+
+        beforeEach(() => {
+            const xmpp = {
+                moderator: new Moderator({
+                    options: {}
+                }),
+                options: {},
+                addListener: () => {} // eslint-disable-line no-empty-function
+            };
+
+            room = new ChatRoom(
+                // eslint-disable-next-line no-empty-function
+                { send: () => {} } /* connection */,
+                'jid',
+                'password',
+                xmpp,
+                {} /* options */);
+            connectionSpy = spyOn(room.connection, 'send');
+        });
+        it('sends a valid emoji reaction message', () => {
+            room.sendReaction('👍', 'mdgId123', 'participant1');
+            expect(connectionSpy.calls.argsFor(0).toString()).toBe(
+                '<message to="jid/participant1" type="chat" xmlns="jabber:client">' +
+                '<reactions id="mdgId123" xmlns="urn:xmpp:reactions:0"><reaction>👍</reaction></reactions>' +
+                '<store xmlns="urn:xmpp:hints"/></message>');
+        });
+        it('sends only valid emoji reaction message', () => {
+            room.sendReaction('I like this 👍', 'mdgId123', 'participant1');
+            expect(connectionSpy.calls.argsFor(0).toString()).toBe(
+                '<message to="jid/participant1" type="chat" xmlns="jabber:client">' +
+                '<reactions id="mdgId123" xmlns="urn:xmpp:reactions:0"><reaction>👍</reaction></reactions>' +
+                '<store xmlns="urn:xmpp:hints"/></message>');
+        });
+        it('sends only the first valid emoji reaction message', () => {
+            room.sendReaction('👍👎', 'mdgId123', 'participant1');
+            expect(connectionSpy.calls.argsFor(0).toString()).toBe(
+                '<message to="jid/participant1" type="chat" xmlns="jabber:client">' +
+                '<reactions id="mdgId123" xmlns="urn:xmpp:reactions:0"><reaction>👍</reaction></reactions>' +
+                '<store xmlns="urn:xmpp:hints"/></message>');
+        });
+        it('throws in case of invalid or no emoji', () => {
+            expect(() => room.sendReaction('foo bar baz', 'mdgId123', 'participant1')).toThrowError(/Invalid reaction/);
+        });
+    });
+});

@@ -1,10 +1,9 @@
-/* global __filename */
-import { getLogger } from 'jitsi-meet-logger';
-import isEqual from 'lodash.isequal';
+import { getLogger } from '@jitsi/logger';
+import { isEqual } from 'lodash-es';
 
 import * as ConferenceEvents from '../../JitsiConferenceEvents';
-import * as MediaType from '../../service/RTC/MediaType';
-import * as VideoType from '../../service/RTC/VideoType';
+import { MediaType } from '../../service/RTC/MediaType';
+import { VideoType } from '../../service/RTC/VideoType';
 import * as ConnectionQualityEvents
     from '../../service/connectivity/ConnectionQualityEvents';
 import {
@@ -12,11 +11,12 @@ import {
     createTransportStatsEvent
 } from '../../service/statistics/AnalyticsEvents';
 import browser from '../browser';
+import { isValidNumber } from '../util/MathUtil';
 
 import Statistics from './statistics';
 
 
-const logger = getLogger(__filename);
+const logger = getLogger('modules/statistics/AvgRTPStatsReporter');
 
 /**
  * This will calculate an average for one, named stat and submit it to
@@ -41,11 +41,13 @@ class AverageStatReport {
      * @param {number} nextValue
      */
     addNext(nextValue) {
+        if (typeof nextValue === 'undefined') {
+            return;
+        }
+
         if (typeof nextValue !== 'number') {
-            logger.error(
-                `${this.name} - invalid value for idx: ${this.count}`,
-                nextValue);
-        } else if (!isNaN(nextValue)) {
+            logger.error(`${this.name} - invalid value for idx: ${this.count}`, nextValue);
+        } else if (isValidNumber(nextValue)) {
             this.sum += nextValue;
             this.samples.push(nextValue);
             this.count += 1;
@@ -200,8 +202,8 @@ class ConnectionAvgStats {
                 const conference = this._avgRtpStatsReporter._conference;
 
                 const batchReport = {
-                    p2p: this.isP2P,
-                    'conference_size': conference.getParticipantCount()
+                    'conference_size': conference.getParticipantCount(),
+                    p2p: this.isP2P
                 };
 
                 if (data.transport && data.transport.length) {
@@ -221,7 +223,7 @@ class ConnectionAvgStats {
                     const jvbEnd2EndRTT = this
                         ._avgRtpStatsReporter.jvbStatsMonitor._avgEnd2EndRTT;
 
-                    if (!isNaN(jvbEnd2EndRTT)) {
+                    if (isValidNumber(jvbEnd2EndRTT)) {
                         // eslint-disable-next-line dot-notation
                         batchReport['rtt_diff']
                             = this._avgRTT.calculate() - jvbEnd2EndRTT;
@@ -233,7 +235,7 @@ class ConnectionAvgStats {
 
                     this._avgEnd2EndRTT = avgLocalRTT + avgRemoteRTT;
 
-                    if (!isNaN(avgLocalRTT) && !isNaN(avgRemoteRTT)) {
+                    if (isValidNumber(avgLocalRTT) && isValidNumber(avgRemoteRTT)) {
                         // eslint-disable-next-line dot-notation
                         batchReport['end2end_rtt_avg'] = this._avgEnd2EndRTT;
                     }
@@ -260,7 +262,7 @@ class ConnectionAvgStats {
         for (const remoteAvg of this._avgRemoteRTTMap.values()) {
             const avg = remoteAvg.calculate();
 
-            if (!isNaN(avg)) {
+            if (isValidNumber(avg)) {
                 sum += avg;
                 count += 1;
                 remoteAvg.reset();
@@ -685,8 +687,8 @@ export default class AvgRTPStatsReporter {
         if (this._sampleIdx >= this._n) {
 
             const batchReport = {
-                p2p: isP2P,
-                'conference_size': confSize
+                'conference_size': confSize,
+                p2p: isP2P
             };
 
             if (data.transport && data.transport.length) {
@@ -714,20 +716,20 @@ export default class AvgRTPStatsReporter {
             this._avgPacketLossTotal.appendReport(batchReport);
 
             this._avgRemoteFPS.appendReport(batchReport);
-            if (!isNaN(this._avgRemoteScreenFPS.calculate())) {
+            if (isValidNumber(this._avgRemoteScreenFPS.calculate())) {
                 this._avgRemoteScreenFPS.appendReport(batchReport);
             }
             this._avgLocalFPS.appendReport(batchReport);
-            if (!isNaN(this._avgLocalScreenFPS.calculate())) {
+            if (isValidNumber(this._avgLocalScreenFPS.calculate())) {
                 this._avgLocalScreenFPS.appendReport(batchReport);
             }
 
             this._avgRemoteCameraPixels.appendReport(batchReport);
-            if (!isNaN(this._avgRemoteScreenPixels.calculate())) {
+            if (isValidNumber(this._avgRemoteScreenPixels.calculate())) {
                 this._avgRemoteScreenPixels.appendReport(batchReport);
             }
             this._avgLocalCameraPixels.appendReport(batchReport);
-            if (!isNaN(this._avgLocalScreenPixels.calculate())) {
+            if (isValidNumber(this._avgLocalScreenPixels.calculate())) {
                 this._avgLocalScreenPixels.appendReport(batchReport);
             }
 
@@ -768,7 +770,7 @@ export default class AvgRTPStatsReporter {
                     const peerAvgPixels = this._calculatePeerAvgVideoPixels(
                         videosResolution, participant, videoType);
 
-                    if (!isNaN(peerAvgPixels)) {
+                    if (isValidNumber(peerAvgPixels)) {
                         peerPixelsSum += peerAvgPixels;
                         peerCount += 1;
                     }
@@ -828,7 +830,7 @@ export default class AvgRTPStatsReporter {
                 = Number(videos[ssrc].height) * Number(videos[ssrc].width);
 
             // FPS is reported as 0 for users with no video
-            if (!isNaN(peerSsrcPixels) && peerSsrcPixels > 0) {
+            if (isValidNumber(peerSsrcPixels) && peerSsrcPixels > 0) {
                 peerPixelsSum += peerSsrcPixels;
                 peerSsrcCount += 1;
             }
@@ -865,7 +867,7 @@ export default class AvgRTPStatsReporter {
                         = this._calculatePeerAvgVideoFps(
                             videosFps, participant, videoType);
 
-                    if (!isNaN(peerAvgFPS)) {
+                    if (isValidNumber(peerAvgFPS)) {
                         peerFpsSum += peerAvgFPS;
                         peerCount += 1;
                     }
@@ -922,7 +924,7 @@ export default class AvgRTPStatsReporter {
             const peerSsrcFps = Number(videos[ssrc]);
 
             // FPS is reported as 0 for users with no video
-            if (!isNaN(peerSsrcFps) && peerSsrcFps > 0) {
+            if (isValidNumber(peerSsrcFps) && peerSsrcFps > 0) {
                 peerFpsSum += peerSsrcFps;
                 peerSsrcCount += 1;
             }
@@ -943,8 +945,8 @@ export default class AvgRTPStatsReporter {
             return;
         }
         const transportStats = {
-            p2p: data.transport[0].p2p,
             'local_candidate_type': data.transport[0].localCandidateType,
+            'p2p': data.transport[0].p2p,
             'remote_candidate_type': data.transport[0].remoteCandidateType,
             'transport_type': data.transport[0].type
         };

@@ -1,5 +1,7 @@
 import * as transform from 'sdp-transform';
 
+import { SSRC_GROUP_SEMANTICS } from '../../service/RTC/StandardVideoQualitySettings';
+
 /**
  * Parses the primary SSRC of given SSRC group.
  * @param {object} group the SSRC group object as defined by the 'sdp-transform'
@@ -194,18 +196,6 @@ class MLineWrap {
     }
 
     /**
-     * @param {string|null} msid the media stream id or <tt>null</tt> to match
-     * the first SSRC object with any 'msid' value.
-     * @return {Object|undefined} the SSRC object as defined by 'sdp-transform'
-     * lib.
-     */
-    findSSRCByMSID(msid) {
-        return this.ssrcs.find(
-            ssrcObj => ssrcObj.attribute === 'msid'
-                && (msid === null || ssrcObj.value === msid));
-    }
-
-    /**
      * Gets the SSRC count for the underlying media description.
      * @return {number}
      */
@@ -244,12 +234,12 @@ class MLineWrap {
 
         // Look for a SIM, FID, or FEC-FR group
         if (this.mLine.ssrcGroups) {
-            const simGroup = this.findGroup('SIM');
+            const simGroup = this.findGroup(SSRC_GROUP_SEMANTICS.SIM);
 
             if (simGroup) {
                 return parsePrimarySSRC(simGroup);
             }
-            const fidGroup = this.findGroup('FID');
+            const fidGroup = this.findGroup(SSRC_GROUP_SEMANTICS.FID);
 
             if (fidGroup) {
                 return parsePrimarySSRC(fidGroup);
@@ -272,7 +262,7 @@ class MLineWrap {
      * one)
      */
     getRtxSSRC(primarySsrc) {
-        const fidGroup = this.findGroupByPrimarySSRC('FID', primarySsrc);
+        const fidGroup = this.findGroupByPrimarySSRC(SSRC_GROUP_SEMANTICS.FID, primarySsrc);
 
 
         return fidGroup && parseSecondarySSRC(fidGroup);
@@ -307,7 +297,7 @@ class MLineWrap {
             // Right now, FID and FEC-FR groups are the only ones we parse to
             // disqualify streams.  If/when others arise we'll
             // need to add support for them here
-            if (ssrcGroupInfo.semantics === 'FID'
+            if (ssrcGroupInfo.semantics === SSRC_GROUP_SEMANTICS.FID
                     || ssrcGroupInfo.semantics === 'FEC-FR') {
                 // secondary streams should be filtered out
                 const secondarySsrc = parseSecondarySSRC(ssrcGroupInfo);
@@ -318,13 +308,6 @@ class MLineWrap {
         }
 
         return videoSSRCs;
-    }
-
-    /**
-     * Dumps all SSRC groups of this media description to JSON.
-     */
-    dumpSSRCGroups() {
-        return JSON.stringify(this.mLine.ssrcGroups);
     }
 
     /**
@@ -353,21 +336,6 @@ class MLineWrap {
         this.mLine.ssrcGroups
             = this.mLine.ssrcGroups
                 .filter(groupInfo => groupInfo.semantics !== semantics);
-    }
-
-    /**
-     * Replaces SSRC (does not affect SSRC groups, but only attributes).
-     * @param {number} oldSSRC the old SSRC number
-     * @param {number} newSSRC the new SSRC number
-     */
-    replaceSSRC(oldSSRC, newSSRC) {
-        if (this.mLine.ssrcs) {
-            this.mLine.ssrcs.forEach(ssrcInfo => {
-                if (ssrcInfo.id === oldSSRC) {
-                    ssrcInfo.id = newSSRC;
-                }
-            });
-        }
     }
 
     /**
@@ -408,19 +376,19 @@ export class SdpTransformWrap {
     }
 
     /**
-     * Selects the first media SDP of given name.
-     * @param {string} mediaType the name of the media e.g. 'audio', 'video',
-     * 'data'.
-     * @return {MLineWrap|null} return {@link MLineWrap} instance for the media
-     * line or <tt>null</tt> if not found. The object returned references
-     * the underlying SDP state held by this <tt>SdpTransformWrap</tt> instance
-     * (it's not a copy).
+     * Selects all the m-lines from the SDP for a given media type.
+     *
+     * @param {string} mediaType the name of the media e.g. 'audio', 'video', 'data'.
+     * @return {MLineWrap|null} return {@link MLineWrap} instance for the media line or <tt>null</tt> if not found. The
+     * object returned references the underlying SDP state held by this <tt>SdpTransformWrap</tt> instance (it's not a
+     * copy).
      */
     selectMedia(mediaType) {
-        const selectedMLine
-            = this.parsedSDP.media.find(mLine => mLine.type === mediaType);
+        const selectedMLines = this.parsedSDP.media
+            .filter(mLine => mLine.type === mediaType)
+            .map(mLine => new MLineWrap(mLine));
 
-        return selectedMLine ? new MLineWrap(selectedMLine) : null;
+        return selectedMLines ?? null;
     }
 
     /**

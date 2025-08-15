@@ -16,13 +16,13 @@ let enabled = false;
  * @param {string} participantId - The participant whose context we need.
  * @returns {Object} The context.
  */
-function getParticipantContext(participantId) {
+function getParticipantContext(participantId, dekkoIv, dekkoKey) {
     if (sharedContext) {
         return sharedContext;
     }
 
     if (!contexts.has(participantId)) {
-        const context = new Context();
+        const context = new Context(participantId, dekkoIv, dekkoKey);
 
         context.setEnabled(enabled);
         contexts.set(participantId, context);
@@ -60,12 +60,12 @@ onmessage = event => {
     if (operation === 'initialize') {
         const { sharedKey } = event.data;
 
-        if (sharedKey) {
-            sharedContext = new Context({ sharedKey });
-        }
+        // if (sharedKey) {
+        //     sharedContext = new Context({ sharedKey });
+        // }
     } else if (operation === 'encode' || operation === 'decode') {
-        const { readableStream, writableStream, participantId } = event.data;
-        const context = getParticipantContext(participantId);
+        const { readableStream, writableStream, participantId, dekkoIv, dekkoKey } = event.data;
+        const context = getParticipantContext(participantId, dekkoIv, dekkoKey);
 
         handleTransform(context, operation, readableStream, writableStream);
     } else if (operation === 'setEnabled') {

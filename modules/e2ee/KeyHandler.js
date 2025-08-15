@@ -23,7 +23,7 @@ export class KeyHandler extends Listenable {
         super();
 
         this.conference = conference;
-        this.e2eeCtx = new E2EEContext(options);
+        this.e2eeCtx = new E2EEContext();
 
         this.enabled = false;
         this._enabling = undefined;

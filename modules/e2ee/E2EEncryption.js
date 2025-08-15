@@ -13,15 +13,18 @@ export class E2EEncryption {
      * @param {JitsiConference} conference - The conference instance for which E2E encryption is to be enabled.
      */
     constructor(conference) {
-        const { e2ee = {} } = conference.options.config;
+        // const { e2ee = {} } = conference.options.config;
 
-        this._externallyManaged = e2ee.externallyManagedKey;
+        // this._externallyManaged = e2ee.externallyManagedKey;
 
-        if (this._externallyManaged) {
-            this._keyHandler = new ExternallyManagedKeyHandler(conference);
-        } else {
-            this._keyHandler = new ManagedKeyHandler(conference);
-        }
+        // if (this._externallyManaged) {
+        //     this._keyHandler = new ExternallyManagedKeyHandler(conference);
+        // } else {
+        //     this._keyHandler = new ManagedKeyHandler(conference);
+        // }
+
+        this._keyHandler = new ExternallyManagedKeyHandler(conference);
+        this.setEnabled(true);
     }
 
     /**
@@ -31,6 +34,8 @@ export class E2EEncryption {
      * @returns {boolean}
      */
     static isSupported(config) {
+        return true;
+
         const { e2ee = {} } = config;
 
         if (!e2ee.externallyManagedKey && !OlmAdapter.isSupported()) {
@@ -72,7 +77,7 @@ export class E2EEncryption {
      * @returns {void}
      */
     setEncryptionKey(keyInfo) {
-        this._keyHandler.setKey(keyInfo);
+        // this._keyHandler.setKey(keyInfo);
     }
 
     /**
@@ -82,7 +87,7 @@ export class E2EEncryption {
      * @returns {void}
      */
     startVerification(participant) {
-        this._keyHandler.sasVerification?.startVerification(participant);
+        // this._keyHandler.sasVerification?.startVerification(participant);
     }
 
     /**
@@ -93,6 +98,6 @@ export class E2EEncryption {
      * @returns {void}
      */
     markParticipantVerified(participant, isVerified) {
-        this._keyHandler.sasVerification?.markParticipantVerified(participant, isVerified);
+        // this._keyHandler.sasVerification?.markParticipantVerified(participant, isVerified);
     }
 }

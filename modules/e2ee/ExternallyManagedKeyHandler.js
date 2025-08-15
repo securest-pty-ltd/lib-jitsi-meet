@@ -1,4 +1,5 @@
 import { KeyHandler } from './KeyHandler';
+import * as JitsiConferenceEvents from '../../JitsiConferenceEvents';
 
 /**
  * This module integrates {@link E2EEContext} with {external} in order to set the keys for encryption.
@@ -10,6 +11,10 @@ export class ExternallyManagedKeyHandler extends KeyHandler {
      */
     constructor(conference) {
         super(conference, { sharedKey: true });
+
+        this.conference.on(
+            JitsiConferenceEvents.USER_LEFT,
+            this._onParticipantLeft.bind(this));        
     }
 
     /**
@@ -20,6 +25,14 @@ export class ExternallyManagedKeyHandler extends KeyHandler {
      * @returns {void}
      */
     setKey(keyInfo) {
-        this.e2eeCtx.setKey(undefined, { encryptionKey: keyInfo.encryptionKey }, keyInfo.index);
+        // this.e2eeCtx.setKey(undefined, { encryptionKey: keyInfo.encryptionKey }, keyInfo.index);
     }
+
+    /**
+     * Rotates the current key when a participant leaves the conference.
+     * @private
+     */
+    _onParticipantLeft(id) {
+        this.e2eeCtx.cleanup(id);
+    }    
 }

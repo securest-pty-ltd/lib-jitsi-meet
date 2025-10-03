@@ -1,5 +1,5 @@
 import { KeyHandler } from './KeyHandler';
-import * as JitsiConferenceEvents from '../../JitsiConferenceEvents';
+import { JitsiConferenceEvents } from '../../JitsiConferenceEvents';
 
 /**
  * This module integrates {@link E2EEContext} with {external} in order to set the keys for encryption.

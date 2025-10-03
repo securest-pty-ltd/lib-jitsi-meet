@@ -44,14 +44,11 @@ const TRACK_ERROR_TO_MESSAGE_MAP: { [key: string]: string; } = {
  *
  * Represents an error that occurred to a JitsiTrack. Can represent various
  * types of errors. For error descriptions (@see JitsiTrackErrors).
- *
- * @extends Error
  */
 export default class JitsiTrackError extends Error {
     public gum?: IGum;
 
     /**
-     * @constructor
      * @param {IGumError|string} error - error object or error name
      * @param {IGumOptions|string} [options] - getUserMedia constraints object or error message
      * @param {DeviceType[]} [devices] - list of getUserMedia requested devices

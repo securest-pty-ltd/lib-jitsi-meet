@@ -1,12 +1,12 @@
 import { getLogger } from '@jitsi/logger';
 
 import { MediaType } from '../../service/RTC/MediaType';
-import * as StatisticsEvents from '../../service/statistics/Events';
+import { StatisticsEvents } from '../../service/statistics/Events';
 import browser from '../browser';
 import FeatureFlags from '../flags/FeatureFlags';
 import { isValidNumber } from '../util/MathUtil';
 
-const logger = getLogger('modules/statistics/RTPStatsCollector');
+const logger = getLogger('stats:RTPStatsCollector');
 
 /**
  * Calculates packet lost percent using the number of lost packets and the

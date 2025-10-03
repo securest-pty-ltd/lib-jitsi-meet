@@ -1,12 +1,14 @@
 import { getLogger } from '@jitsi/logger';
 
 import { JitsiConferenceEvents } from '../../JitsiConferenceEvents';
-import * as JitsiTrackEvents from '../../JitsiTrackEvents';
-import RTCEvents from '../../service/RTC/RTCEvents';
+import { JitsiTrackEvents } from '../../JitsiTrackEvents';
+import { RTCEvents } from '../../service/RTC/RTCEvents';
 import { VideoType } from '../../service/RTC/VideoType';
 import { createTrackStreamingStatusEvent } from '../../service/statistics/AnalyticsEvents';
 import JitsiRemoteTrack from '../RTC/JitsiRemoteTrack';
 import RTC from '../RTC/RTC';
+import RTCStats from '../RTCStats/RTCStats';
+import { RTCStatsEvents } from '../RTCStats/RTCStatsEvents';
 import browser from '../browser';
 import Statistics from '../statistics/statistics';
 
@@ -44,7 +46,7 @@ type StreamingStatusMap = {
     videoType?: VideoType;
 };
 
-const logger = getLogger('modules/connectivity/TrackStreamingStatus');
+const logger = getLogger('connectivity:TrackStreamingStatus');
 
 /**
  * Default value of 500 milliseconds for {@link TrackStreamingStatusImpl.outOfForwardedSourcesTimeout}.
@@ -77,7 +79,7 @@ export class TrackStreamingStatusImpl {
     track: JitsiRemoteTrack;
 
     /**  This holds the timeout callback ID scheduled using window.setTimeout. */
-    trackTimer: number | null;
+    trackTimer: Nullable<number>;
 
     /**
      * If video track frozen detection through RTC mute event is supported, we wait some time until video track is
@@ -113,10 +115,10 @@ export class TrackStreamingStatusImpl {
      * FIXME merge this logic with NO_DATA_FROM_SOURCE event implemented in JitsiLocalTrack by extending the event
      * to the remote track and allowing to set different timeout for local and remote tracks.
      */
-    rtcMutedTimestamp: number | null;
+    rtcMutedTimestamp: Nullable<number>;
 
     /** This holds the restoring timeout callback ID scheduled using window.setTimeout. */
-    restoringTimer: ReturnType<typeof setTimeout> | null;
+    restoringTimer: Nullable<ReturnType<typeof setTimeout>>;
 
     /**
      * This holds the current streaming status (along with all the internal events that happen while in that
@@ -329,6 +331,11 @@ export class TrackStreamingStatusImpl {
 
             // It's common for the event listeners to access the JitsiRemoteTrack. Thus pass it as a parameter here.
             this.track.emit(JitsiTrackEvents.TRACK_STREAMING_STATUS_CHANGED, this.track, newStatus);
+            if (newStatus === TrackStreamingStatus.INACTIVE) {
+                RTCStats.sendStatsEntry(RTCStatsEvents.REMOTE_SOURCE_SUSPENDED_EVENT);
+            } else if (newStatus === TrackStreamingStatus.INTERRUPTED) {
+                RTCStats.sendStatsEntry(RTCStatsEvents.REMOTE_SOURCE_INTERRUPTED_EVENT);
+            }
         }
     }
 

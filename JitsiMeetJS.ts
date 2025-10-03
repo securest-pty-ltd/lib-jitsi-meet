@@ -3,25 +3,25 @@ import { merge } from 'lodash-es';
 
 import JitsiConference from './JitsiConference';
 import * as JitsiConferenceErrors from './JitsiConferenceErrors';
-import * as JitsiConferenceEvents from './JitsiConferenceEvents';
+import { JitsiConferenceEvents } from './JitsiConferenceEvents';
 import JitsiConnection from './JitsiConnection';
 import * as JitsiConnectionErrors from './JitsiConnectionErrors';
 import { JitsiConnectionEvents } from './JitsiConnectionEvents';
 import JitsiMediaDevices from './JitsiMediaDevices';
-import * as JitsiMediaDevicesEvents from './JitsiMediaDevicesEvents';
+import { JitsiMediaDevicesEvents } from './JitsiMediaDevicesEvents';
 import JitsiTrackError from './JitsiTrackError';
 import * as JitsiTrackErrors from './JitsiTrackErrors';
-import * as JitsiTrackEvents from './JitsiTrackEvents';
+import { JitsiTrackEvents } from './JitsiTrackEvents';
 import * as JitsiTranscriptionStatus from './JitsiTranscriptionStatus';
 import JitsiLocalTrack from './modules/RTC/JitsiLocalTrack';
 import RTC from './modules/RTC/RTC';
 import RTCStats from './modules/RTCStats/RTCStats';
-import * as RTCStatsEvents from './modules/RTCStats/RTCStatsEvents';
+import { RTCStatsEvents } from './modules/RTCStats/RTCStatsEvents';
 import browser from './modules/browser';
 import NetworkInfo from './modules/connectivity/NetworkInfo';
 import { TrackStreamingStatus } from './modules/connectivity/TrackStreamingStatus';
 import getActiveAudioDevice from './modules/detection/ActiveDeviceDetector';
-import * as DetectionEvents from './modules/detection/DetectionEvents';
+import { DetectionEvents } from './modules/detection/DetectionEvents';
 import TrackVADEmitter from './modules/detection/TrackVADEmitter';
 import ProxyConnectionService
     from './modules/proxyconnection/ProxyConnectionService';
@@ -36,13 +36,12 @@ import * as VideoSIPGWConstants from './modules/videosipgw/VideoSIPGWConstants';
 import AudioMixer from './modules/webaudio/AudioMixer';
 import { MediaType } from './service/RTC/MediaType';
 import { VideoType } from './service/RTC/VideoType';
-import * as ConnectionQualityEvents
-    from './service/connectivity/ConnectionQualityEvents';
-import * as E2ePingEvents from './service/e2eping/E2ePingEvents';
+import { ConnectionQualityEvents } from './service/connectivity/ConnectionQualityEvents';
+import { E2ePingEvents } from './service/e2eping/E2ePingEvents';
 import { createGetUserMediaEvent } from './service/statistics/AnalyticsEvents';
 import { COMMIT_HASH } from './version';
 
-const logger = Logger.getLogger('JitsiMeetJS');
+const logger = Logger.getLogger('core:JitsiMeetJS');
 
 // Settin the default log levels to info early so that we avoid overriding a log level set externally.
 Logger.setLogLevel(Logger.levels.INFO);
@@ -120,14 +119,16 @@ export interface IJoinConferenceOptions {
     tracks?: JitsiLocalTrack[];
 }
 
+const mediaDevices = new JitsiMediaDevices();
+
 /**
- * The public API of the Jitsi Meet library (a.k.a. {@code JitsiMeetJS}).
+ * The public API of the Jitsi Meet library (a.k.a. `JitsiMeetJS`).
  */
-export default {
+const JitsiMeetJS = {
     JitsiConnection,
 
     /**
-     * {@code ProxyConnectionService} is used to connect a remote peer to a local Jitsi participant without going
+     * `ProxyConnectionService` is used to connect a remote peer to a local Jitsi participant without going
      * through a Jitsi conference. It is currently used for room integration development, specifically wireless
      * screensharing. Its API is experimental and will likely change; usage of it is advised against.
      */
@@ -179,10 +180,10 @@ export default {
      * @param {string} options.cameraDeviceId
      * @param {string} options.micDeviceId
      *
-     * @returns {Promise.<{Array.<JitsiTrack>}, JitsiConferenceError>} A promise that returns an array of created
-     * JitsiTracks if resolved, or a JitsiConferenceError if rejected.
+     * @returns {Promise.<{Array.<JitsiTrack>}, JitsiTrackError>} A promise that returns an array of created
+     * JitsiTracks if resolved, or a JitsiTrackError if rejected.
      */
-    createLocalTracks(options: ICreateLocalTrackOptions = {}) {
+    createLocalTracks(options: ICreateLocalTrackOptions = {}): Promise<JitsiLocalTrack[] | JitsiTrackError> {
         let isFirstGUM = false;
         const startTS = window.performance.now();
 
@@ -281,7 +282,7 @@ export default {
      * @param {Array<ICreateLocalTrackFromMediaStreamOptions>} tracksInfo - array of track information
      * @returns {Array<JitsiLocalTrack>} - created local tracks
      */
-    createLocalTracksFromMediaStreams(tracksInfo: ICreateLocalTrackFromMediaStreamOptions[]) {
+    createLocalTracksFromMediaStreams(tracksInfo: ICreateLocalTrackFromMediaStreamOptions[]): JitsiLocalTrack[] {
         return RTC.createLocalTracks(tracksInfo.map(trackInfo => {
             const tracks = trackInfo.stream.getTracks()
                 .filter(track => track.kind === trackInfo.mediaType);
@@ -373,7 +374,7 @@ export default {
         // @ts-ignore
         logger.info(`This appears to be ${browser.getName()}, ver: ${browser.getVersion()}`);
 
-        JitsiMediaDevices.init();
+        mediaDevices.init();
         Settings.init(options.externalStorage);
         Statistics.init(options);
 
@@ -423,8 +424,8 @@ export default {
      * Returns whether the current execution environment supports WebRTC (for
      * use within this library).
      *
-     * @returns {boolean} {@code true} if WebRTC is supported in the current
-     * execution environment (for use within this library); {@code false},
+     * @returns {boolean} `true` if WebRTC is supported in the current
+     * execution environment (for use within this library); `false`,
      * otherwise.
      */
     isWebRtcSupported() {
@@ -443,7 +444,7 @@ export default {
     async joinConference(
             roomName: string,
             appId: string = '',
-            token: string | null = null,
+            token: Nullable<string> = null,
             options: IJoinConferenceOptions = {}): Promise<JitsiConference> {
         const d = new Deferred();
         let connectionOptions = options.connectionOptions ?? {};
@@ -521,7 +522,7 @@ export default {
     },
 
     logLevels: Logger.levels,
-    mediaDevices: JitsiMediaDevices as unknown,
+    mediaDevices,
 
     /**
      * Removes global logging transport from the library logging framework.
@@ -576,7 +577,7 @@ export default {
          * @param {string} statsType - The type of stats to send.
          * @param {Object} data - The stats data to send.
          */
-        sendStatsEntry(statsType, data) {
+        sendStatsEntry(statsType: RTCStatsEvents, data?: Optional<any>) {
             RTCStats.sendStatsEntry(statsType, null, data);
         }
     },
@@ -629,7 +630,7 @@ export default {
      * Informs lib-jitsi-meet about the current network status.
      *
      * @param {object} state - The network info state.
-     * @param {boolean} state.isOnline - {@code true} if the internet connectivity is online or {@code false}
+     * @param {boolean} state.isOnline - `true` if the internet connectivity is online or `false`
      * otherwise.
      */
     setNetworkInfo({ isOnline }) {
@@ -646,3 +647,5 @@ export default {
     },
     version: COMMIT_HASH
 };
+
+export default JitsiMeetJS;

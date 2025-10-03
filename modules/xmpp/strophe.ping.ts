@@ -3,7 +3,7 @@ import { $iq, Strophe } from 'strophe.js';
 
 import ConnectionPlugin from './ConnectionPlugin';
 
-const logger = getLogger('modules/xmpp/strophe.ping');
+const logger = getLogger('xmpp:strophe.ping');
 
 /**
  * Default ping every 10 sec
@@ -48,7 +48,7 @@ export default class PingConnectionPlugin extends ConnectionPlugin {
     pingThreshold: number;
     pingTimestampsToKeep: number;
     pingExecIntervals: number[];
-    intervalId: number | null;
+    intervalId: Nullable<number>;
     _lastServerCheck: number;
 
     /**
@@ -82,7 +82,7 @@ export default class PingConnectionPlugin extends ConnectionPlugin {
      * Initializes the plugin. Method called by Strophe.
      * @param connection Strophe connection instance.
      */
-    init(connection: Strophe.Connection): void {
+    override init(connection: Strophe.Connection): void {
         super.init(connection);
         Strophe.addNamespace('PING', 'urn:xmpp:ping');
     }

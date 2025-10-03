@@ -6,22 +6,62 @@ import EventEmitter, { EventListener } from './EventEmitter';
  * this functionality to other classes.
  */
 export default class Listenable {
-    public eventEmitter: EventEmitter;
-    public addEventListener: typeof EventEmitter.prototype.addListener;
-    public removeEventListener: typeof EventEmitter.prototype.removeListener;
-    public on: typeof EventEmitter.prototype.addListener;
-    public off: typeof EventEmitter.prototype.removeListener;
+    /**
+     * @internal
+     */
+    eventEmitter: EventEmitter;
 
     /**
      * Creates new instance.
-     * @constructor
      */
     constructor() {
         this.eventEmitter = new EventEmitter();
+    }
 
-        // aliases for addListener/removeListener
-        this.addEventListener = this.on = this.addListener;
-        this.removeEventListener = this.off = this.removeListener;
+    /**
+   * Attaches a handler for events (e.g., "participant joined") in the conference.
+   * All possible events are defined in JitsiConferenceEvents.
+   * @param {string} eventId - The event ID.
+   * @param {Function} handler - Handler for the event.
+   */
+    on(eventId: string, handler: EventListener): void {
+        this.eventEmitter.on(eventId, handler);
+    }
+
+    /**
+   * Removes event listener.
+   * @param {string} eventId - The event ID.
+   * @param {Function} [handler] - Optional, the specific handler to unbind.
+   */
+    off(eventId: string, handler?: EventListener): void {
+        this.eventEmitter.removeListener(eventId, handler);
+    }
+
+    /**
+   * Adds a one-time listener function for the event.
+   * @param {string} eventId - The event ID.
+   * @param {Function} handler - Handler for the event.
+   */
+    once(eventId: string, handler: EventListener): void {
+        this.eventEmitter.once(eventId, handler);
+    }
+
+    /**
+     * Alias for on method.
+     * @param {string} eventId - The event ID.
+     * @param {Function} handler - Handler for the event.
+     */
+    addEventListener(eventId: string, handler: EventListener): void {
+        this.on(eventId, handler);
+    }
+
+    /**
+     * Alias for off method.
+     * @param {string} eventId - The event ID.
+     * @param {Function} [handler] - Optional, the specific handler to unbind.
+     */
+    removeEventListener(eventId: string, handler?: EventListener): void {
+        this.off(eventId, handler);
     }
 
     /**
@@ -63,5 +103,21 @@ export default class Listenable {
      */
     emit(event: string, ...args: any[]): void {
         this.eventEmitter.emit(event, ...args);
+    }
+
+    /**
+     * Removes all listeners for the event emitter.
+     */
+    removeAllListeners(): void {
+        this.eventEmitter.removeAllListeners();
+    }
+
+    /**
+     * Returns the number of listeners for the specified event.
+     * @param {string} [eventName] - The name of the event.
+     * @returns {number} - The number of listeners for the event.
+     */
+    listenerCount(eventName?: string): number {
+        return this.eventEmitter.listenerCount(eventName);
     }
 }

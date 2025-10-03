@@ -5,7 +5,7 @@ import $ from '../util/XMLParser';
 
 import ConnectionPlugin from './ConnectionPlugin';
 
-const logger = getLogger('modules/xmpp/strophe.rayo');
+const logger = getLogger('xmpp:strophe.rayo');
 
 const RAYO_XMLNS = 'urn:xmpp:rayo:1';
 
@@ -13,13 +13,13 @@ const RAYO_XMLNS = 'urn:xmpp:rayo:1';
  *
  */
 export default class RayoConnectionPlugin extends ConnectionPlugin {
-    private callResource: string | null = null;
+    private callResource: Nullable<string> = null;
 
     /**
      *
      * @param connection
      */
-    init(connection: Connection): void {
+    override init(connection: Connection): void {
         super.init(connection);
 
         connection.addHandler(

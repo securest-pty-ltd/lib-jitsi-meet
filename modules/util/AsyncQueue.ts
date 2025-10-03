@@ -1,7 +1,7 @@
 import { getLogger } from '@jitsi/logger';
 import { AsyncQueue as AsyncQueueType, queue } from 'async-es';
 
-const logger = getLogger('modules/util/AsyncQueue');
+const logger = getLogger('utils:AsyncQueue');
 
 /**
  * Error to be passed to a callback of a queued task when the queue is cleared.
@@ -25,7 +25,7 @@ export type TaskCallback = (err?: Error) => void;
 export default class AsyncQueue {
     private _queue: AsyncQueueType<Task>;
     private _stopped: boolean;
-    private _taskCallbacks: Map<Task, TaskCallback | undefined>;
+    private _taskCallbacks: Map<Task, Optional<TaskCallback>>;
 
     /**
      * Creates new instance.

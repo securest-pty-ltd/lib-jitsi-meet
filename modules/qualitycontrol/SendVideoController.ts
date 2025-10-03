@@ -2,9 +2,9 @@ import { getLogger } from '@jitsi/logger';
 
 import JitsiConference from '../../JitsiConference';
 import JingleSessionPC from '../xmpp/JingleSessionPC';
-import MediaSessionEvents from '../xmpp/MediaSessionEvents';
+import { MediaSessionEvents } from '../xmpp/MediaSessionEvents';
 
-const logger = getLogger('modules/qualitycontrol/SendVideoController');
+const logger = getLogger('qc:SendVideoController');
 const MAX_LOCAL_RESOLUTION = 2160;
 
 export interface IVideoConstraint {
@@ -74,10 +74,10 @@ export default class SendVideoController {
      * the active media session's receive preference set by the remote party.
      *
      * @param {string} sourceName - The source for which sender constraints have changed.
-     * @returns {number|undefined}
+     * @returns {Optional<number>}
      * @private
      */
-    _selectSendMaxFrameHeight(sourceName: string): number | undefined {
+    _selectSendMaxFrameHeight(sourceName: string): Optional<number> {
         if (!sourceName) {
             throw new Error('sourceName missing for calculating the sendMaxHeight for video tracks');
         }

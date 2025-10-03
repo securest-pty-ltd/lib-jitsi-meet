@@ -121,11 +121,13 @@ class MockRTCPeerConnection {
  * Mock {@link TraceablePeerConnection} - add things as needed, but only things useful for all tests.
  */
 export class MockPeerConnection {
-    private id: string;
     private _usesUnifiedPlan: boolean;
     private peerconnection: MockRTCPeerConnection;
     private _simulcast: boolean;
-
+    /**
+     * @internal
+     */
+    id: string;
     /**
      * Constructor.
      *
@@ -332,9 +334,9 @@ export class MockSignalingLayerImpl {
     /**
      * Returns the muted state, videoType and codec info received in presence.
      * @param {string} endpointId
-     * @returns Object
+     * @returns Optional<Object>
      */
-    getPeerMediaInfo(endpointId: string): object | undefined {
+    getPeerMediaInfo(endpointId: string): Optional<object> {
         return this._remoteSourceState[endpointId];
     }
 

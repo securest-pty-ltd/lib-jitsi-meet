@@ -7,21 +7,17 @@ import {
     TRACK_IS_DISPOSED,
     TRACK_NO_STREAM_FOUND
 } from '../../JitsiTrackErrors';
-import {
-    LOCAL_TRACK_STOPPED,
-    NO_DATA_FROM_SOURCE,
-    TRACK_MUTE_CHANGED
-} from '../../JitsiTrackEvents';
+import { JitsiTrackEvents } from '../../JitsiTrackEvents';
 import { CameraFacingMode } from '../../service/RTC/CameraFacingMode';
 import { MediaType } from '../../service/RTC/MediaType';
-import RTCEvents from '../../service/RTC/RTCEvents';
+import { RTCEvents } from '../../service/RTC/RTCEvents';
 import { VideoType } from '../../service/RTC/VideoType';
 import {
-    NO_BYTES_SENT,
-    TRACK_UNMUTED,
+    AnalyticsEvents,
     createNoDataFromSourceEvent
 } from '../../service/statistics/AnalyticsEvents';
 import browser from '../browser';
+import VADAudioAnalyser from '../detection/VADAudioAnalyser';
 import Statistics from '../statistics/statistics';
 import { isValidNumber } from '../util/MathUtil';
 
@@ -29,7 +25,7 @@ import JitsiTrack from './JitsiTrack';
 import RTCUtils from './RTCUtils';
 import TraceablePeerConnection from './TraceablePeerConnection';
 
-const logger = getLogger('modules/RTC/JitsiLocalTrack');
+const logger = getLogger('rtc:JitsiLocalTrack');
 
 export interface IStreamEffect {
     isEnabled: (track: JitsiLocalTrack) => boolean;
@@ -106,12 +102,10 @@ export default class JitsiLocalTrack extends JitsiTrack {
     public deviceId: string;
     public resolution?: number;
     public maxEnabledResolution?: number;
-    public conference: JitsiConference | null;
 
     /**
      * Constructs a new JitsiLocalTrack instance.
      *
-     * @constructor
      * @param {Object} trackInfo
      * @param {Object} trackInfo.constraints - The contraints used for creating the track.
      * @param {number} trackInfo.rtcId - The ID assigned by the RTC module.
@@ -125,6 +119,8 @@ export default class JitsiLocalTrack extends JitsiTrack {
      * @param {string} trackInfo.sourceId - The id of the desktop sharing source, which is the Chrome media source ID,
      * returned by Desktop Picker on Electron. NOTE: defined for desktop sharing tracks only.
      * @param {string} trackInfo.sourceType - The type of source the track originates from.
+     *
+     * @noInheritDoc
      */
     constructor({
         constraints,
@@ -143,7 +139,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
             /* conference */ null,
             stream,
             track,
-            /* streamInactiveHandler */ () => this.emit(LOCAL_TRACK_STOPPED, this),
+            /* streamInactiveHandler */ () => this.emit(JitsiTrackEvents.LOCAL_TRACK_STOPPED, this),
             mediaType,
             videoType);
 
@@ -336,7 +332,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
     private _fireNoDataFromSourceEvent(): void {
         const value = !this.isReceivingData();
 
-        this.emit(NO_DATA_FROM_SOURCE, value);
+        this.emit(JitsiTrackEvents.NO_DATA_FROM_SOURCE, value);
 
         logger.debug(`NO_DATA_FROM_SOURCE event with value ${value} detected for track: ${this}`);
 
@@ -363,7 +359,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
         this._setHandler('track_unmute', () => {
             this._fireNoDataFromSourceEvent();
             Statistics.sendAnalyticsAndLog(
-                TRACK_UNMUTED,
+                AnalyticsEvents.TRACK_UNMUTED,
                 {
                     'media_type': this.getType(),
                     'track_type': 'local',
@@ -425,19 +421,6 @@ export default class JitsiLocalTrack extends JitsiTrack {
         this.conference._removeLocalTrackFromPc(this).then(
             successCallback,
             (error: any) => errorCallback(new Error(error)));
-    }
-
-    /**
-     * Sends mute status for a track to conference if any.
-     *
-     * @param {boolean} mute - If track is muted.
-     * @private
-     * @returns {void}
-     */
-    private _sendMuteStatus(mute: boolean): void {
-        if (this.conference) {
-            this.conference._setTrackMuteStatus(this, mute) && this.conference.room.sendPresence();
-        }
     }
 
     /**
@@ -523,7 +506,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
                 = RTCUtils.obtainAudioAndVideoPermissions({
 
                     ...streamOptions,
-                    constraints: { video: this._constraints } } as any) as Promise<IStreamInfo[]>;
+                    constraints: { video: this._constraints } }) as Promise<IStreamInfo[]>;
 
             promise = promise.then((streamsInfo: IStreamInfo[]) => {
                 const streamInfo = streamsInfo.find(info => info.track.kind === this.getType());
@@ -562,7 +545,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
 
                 // Send the videoType message to the bridge.
                 this.isVideoTrack() && this.conference?._sendBridgeVideoTypeMessage(this);
-                this.emit(TRACK_MUTE_CHANGED, this);
+                this.emit(JitsiTrackEvents.TRACK_MUTE_CHANGED, this);
             });
     }
 
@@ -668,26 +651,13 @@ export default class JitsiLocalTrack extends JitsiTrack {
     }
 
     /**
-     * Sets the stream property of JitsiLocalTrack object and sets all stored handlers to it.
-     *
-     * @param {MediaStream} stream - The new MediaStream.
-     * @private
-     * @returns {void}
-     */
-    protected _setStream(stream: MediaStream | null): void {
-        super._setStream(stream);
-    }
-
-
-    /**
      * @inheritdoc
      *
      * Stops sending the media track. And removes it from the HTML. NOTE: Works for local tracks only.
      *
-     * @extends JitsiTrack#dispose
      * @returns {Promise}
      */
-    async dispose(): Promise<void> {
+    override async dispose(): Promise<void> {
         if (this.disposed) {
             return;
         }
@@ -717,12 +687,25 @@ export default class JitsiLocalTrack extends JitsiTrack {
     }
 
     /**
+     * Sends mute status for a track to conference if any.
+     *
+     * @param {boolean} mute - If track is muted.
+     * @internal
+     * @returns {void}
+     */
+    _sendMuteStatus(mute: boolean): void {
+        if (this.conference) {
+            this.conference._setTrackMuteStatus(this, mute) && this.conference.room.sendPresence();
+        }
+    }
+
+    /**
      * Returns facing mode for video track from camera. For other cases (e.g. audio track or 'desktop' video track)
      * returns undefined.
      *
-     * @returns {CameraFacingMode|undefined}
+     * @returns {Optional<CameraFacingMode>}
      */
-    getCameraFacingMode(): CameraFacingMode | undefined {
+    getCameraFacingMode(): Optional<CameraFacingMode> {
         if (this.isVideoTrack() && this.videoType === VideoType.CAMERA) {
             // MediaStreamTrack#getSettings() is not implemented in many
             // browsers, so we need feature checking here. Progress on the
@@ -794,17 +777,17 @@ export default class JitsiLocalTrack extends JitsiTrack {
     /**
      * Returns the source name associated with the jitsi track.
      *
-     * @returns {string | null} source name
+     * @returns {Nullable<string>} source name
      */
-    getSourceName(): string | null {
+    override getSourceName(): Nullable<string> {
         return this._sourceName;
     }
 
     /**
      * Returns the primary SSRC associated with the track.
-     * @returns {number}
+     * @returns {Nullable<number>}
      */
-    getSsrc(): number | null {
+    override getSsrc(): Nullable<number> {
         return this._ssrc;
     }
 
@@ -828,7 +811,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
      *
      * @returns {boolean} <tt>true</tt>
      */
-    isLocal(): boolean {
+    override isLocal(): boolean {
         return true;
     }
 
@@ -837,7 +820,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
      *
      * @returns {boolean} <tt>true</tt> - if the stream is muted and <tt>false</tt> otherwise.
      */
-    isMuted(): boolean {
+    override isMuted(): boolean {
         // this.stream will be null when we mute local video on Chrome
         if (!this.stream) {
             return true;
@@ -913,7 +896,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
                     logger.warn(`${this} 'bytes sent' <= 0: \
                         ${bytesSent}`);
 
-                    Statistics.analytics.sendEvent(NO_BYTES_SENT, { 'media_type': this.getType() });
+                    Statistics.analytics.sendEvent(AnalyticsEvents.NO_BYTES_SENT, { 'media_type': this.getType() });
                 }
             }, 3000);
             this._testDataSent = false;
@@ -1004,8 +987,9 @@ export default class JitsiLocalTrack extends JitsiTrack {
      * Sets the source name to be used for signaling the jitsi track.
      *
      * @param {string} name The source name.
+     * @internal
      */
-    setSourceName(name: string): void {
+    override setSourceName(name: string): void {
         this._sourceName = name;
     }
 
@@ -1048,7 +1032,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
      *
      * @return {string}
      */
-    toString(): string {
+    override toString(): string {
         return `LocalTrack[${this.rtcId},${this.getType()}]`;
     }
 
@@ -1074,7 +1058,7 @@ export default class JitsiLocalTrack extends JitsiTrack {
             throw new Error(`Media ${mediaType} is not supported, track must be audio`);
         }
 
-        const hasAudioMixEffect = Boolean(typeof this._streamEffect?.setMuted === 'function');
+        const hasAudioMixEffect = typeof this._streamEffect?.setMuted === 'function';
 
         if (this._streamEffect && !hasAudioMixEffect) {
             throw new Error(`Cannot apply constraints while the effect ${JSON.stringify(
@@ -1082,7 +1066,22 @@ export default class JitsiLocalTrack extends JitsiTrack {
             );
         }
 
-        await this.conference._removeLocalTrackFromPc(this);
+        const hasConference = Boolean(this.conference);
+        let audioAnalyser: VADAudioAnalyser | undefined;
+
+        if (hasConference) {
+            audioAnalyser = this.conference.getAudioAnalyser();
+
+            if (audioAnalyser) {
+                logger.debug(`Removing track ${this} from audio analyser`);
+                audioAnalyser._trackRemoved(this);
+            }
+
+            logger.debug(`Removing track ${this} from conference`);
+            await this.conference._removeLocalTrackFromPc(this);
+        }
+
+        const isMuted = this.isMuted();
 
         if (hasAudioMixEffect) {
             this._stopStreamEffect();
@@ -1097,9 +1096,11 @@ export default class JitsiLocalTrack extends JitsiTrack {
         };
 
         const deviceIdKey = mediaType === MediaType.AUDIO ? 'micDeviceId' : 'cameraDeviceId';
-        let mediaStreamData;
+        let mediaStreamData: IStreamInfo | undefined;
 
         try {
+            logger.debug(`applyConstraints for track ${this} with constraints: ${JSON.stringify(constraints)}`);
+
             [ mediaStreamData ] = await RTCUtils.obtainAudioAndVideoPermissions({
                 constraints: { [mediaType]: constraintsToApply },
                 [deviceIdKey]: constraintsToApply.deviceId,
@@ -1129,6 +1130,8 @@ export default class JitsiLocalTrack extends JitsiTrack {
             throw new JitsiTrackError(JitsiTrackErrors.GENERAL);
         }
 
+        logger.debug('Setting updated stream and track');
+
         this._setStream(mediaStreamData.stream);
         this.track = mediaStreamData.track;
 
@@ -1136,6 +1139,18 @@ export default class JitsiLocalTrack extends JitsiTrack {
             this._startStreamEffect(this._streamEffect);
         }
 
-        await this.conference._addLocalTrackToPc(this);
+        if (isMuted) {
+            this._setMuted(true);
+        }
+
+        if (hasConference) {
+            logger.debug(`Adding track ${this} to conference`);
+            await this.conference._addLocalTrackToPc(this);
+
+            if (audioAnalyser) {
+                logger.debug(`Adding track ${this} to audio analyser`);
+                audioAnalyser._trackAdded(this);
+            }
+        }
     }
 }

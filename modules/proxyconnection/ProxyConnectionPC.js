@@ -1,6 +1,6 @@
 import { getLogger } from '@jitsi/logger';
 
-import RTCEvents from '../../service/RTC/RTCEvents';
+import { RTCEvents } from '../../service/RTC/RTCEvents';
 import { XMPPEvents } from '../../service/xmpp/XMPPEvents';
 import RTC from '../RTC/RTC';
 import JingleSessionPC from '../xmpp/JingleSessionPC';
@@ -9,7 +9,7 @@ import { DEFAULT_STUN_SERVERS } from '../xmpp/xmpp';
 import CustomSignalingLayer from './CustomSignalingLayer';
 import { ACTIONS } from './constants';
 
-const logger = getLogger('modules/proxyconnection/ProxyConnectionPC');
+const logger = getLogger('proxyconnection:ProxyConnectionPC');
 
 /**
  * An adapter around {@code JingleSessionPC} so its logic can be re-used without

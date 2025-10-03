@@ -6,7 +6,7 @@ import base64js from 'base64-js';
 import { isEqual } from 'lodash-es';
 import { v4 as uuidv4 } from 'uuid';
 
-import * as JitsiConferenceEvents from '../../JitsiConferenceEvents';
+import { JitsiConferenceEvents } from '../../JitsiConferenceEvents';
 import Deferred from '../util/Deferred';
 import Listenable from '../util/Listenable';
 import { FEATURE_E2EE, JITSI_MEET_MUC_TYPE } from '../xmpp/xmpp';
@@ -14,7 +14,7 @@ import { FEATURE_E2EE, JITSI_MEET_MUC_TYPE } from '../xmpp/xmpp';
 import { E2EEErrors } from './E2EEErrors';
 import { generateSas } from './SAS';
 
-const logger = getLogger('modules/e2ee/OlmAdapter');
+const logger = getLogger('e2ee:OlmAdapter');
 
 const REQ_TIMEOUT = 5 * 1000;
 const OLM_MESSAGE_TYPE = 'olm';

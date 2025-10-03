@@ -2,10 +2,10 @@ import { getLogger } from '@jitsi/logger';
 
 import EventEmitter from '../util/EventEmitter';
 
-import * as DetectionEvents from './DetectionEvents';
+import { DetectionEvents } from './DetectionEvents';
 import TrackVADEmitter from './TrackVADEmitter';
 
-const logger = getLogger('modules/detection/VADReportingService');
+const logger = getLogger('vad:VADReportingService');
 
 /**
  * Sample rate used by TrackVADEmitter, this value determines how often the ScriptProcessorNode is going to call the
@@ -39,7 +39,7 @@ export default class VADReportingService extends EventEmitter {
     private _contextMap: Map<string, IVADDeviceContext>;
     private _destroyed: boolean;
     private _intervalDelay: number;
-    private _intervalId: ReturnType<typeof setInterval> | null;
+    private _intervalId: Nullable<ReturnType<typeof setInterval>>;
 
     /**
      *

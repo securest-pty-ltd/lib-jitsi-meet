@@ -9,7 +9,7 @@ import JitsiLocalTrack from '../RTC/JitsiLocalTrack';
 import browser from '../browser';
 import JingleSessionPC from '../xmpp/JingleSessionPC';
 
-const logger = getLogger('modules/qualitycontrol/CodecSelection');
+const logger = getLogger('qc:CodecSelection');
 
 // Default video codec preferences on mobile and desktop endpoints.
 const DESKTOP_VIDEO_CODEC_ORDER = [ CodecMimeType.AV1, CodecMimeType.VP9, CodecMimeType.VP8, CodecMimeType.H264 ];
@@ -163,10 +163,10 @@ export class CodecSelection {
     /**
      * Returns the preferred screenshare codec for the given connection type.
      *
-     * @param {String} connectionType The media connection type, 'p2p' or 'jvb'.
+     * @param {Optional} connectionType The media connection type, 'p2p' or 'jvb'.
      * @returns CodecMimeType
      */
-    getScreenshareCodec(connectionType: string): string | undefined {
+    getScreenshareCodec(connectionType: string): Optional<string> {
         return this.screenshareCodec[connectionType];
     }
 
@@ -206,7 +206,7 @@ export class CodecSelection {
         // Include the visitor codecs.
         this.visitorCodecs.length && remoteCodecsPerParticipant.push(this.visitorCodecs);
 
-        const selectedCodecOrder = localPreferredCodecOrder.reduce<string[]>((acc, localCodec) => {
+        const selectedCodecOrder = localPreferredCodecOrder.reduce<CodecMimeType[]>((acc, localCodec) => {
             let codecNotSupportedByRemote = false;
 
             // Remove any codecs that are not supported by any of the remote endpoints. The order of the supported
@@ -218,9 +218,8 @@ export class CodecSelection {
                     || !remoteCodecs.find(participantCodec => participantCodec === localCodec);
                 }
             }
-
             if (!codecNotSupportedByRemote) {
-                acc.push(localCodec);
+                acc.push(localCodec as CodecMimeType);
             }
 
             return acc;
@@ -232,7 +231,7 @@ export class CodecSelection {
             return;
         }
 
-        session.setVideoCodecs(selectedCodecOrder, this.screenshareCodec?.jvb);
+        session.setVideoCodecs(selectedCodecOrder, this.screenshareCodec?.jvb as CodecMimeType);
     }
 
     /**

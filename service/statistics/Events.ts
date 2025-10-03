@@ -1,4 +1,4 @@
-export enum Events {
+export enum StatisticsEvents {
 
     /**
      * Notifies about audio level in RTP statistics by SSRC.
@@ -36,17 +36,4 @@ export enum Events {
      * An event carrying the encode time stats for all the local video sources.
      */
     ENCODE_TIME_STATS = 'statistics.encode_time_stats',
-
-    /**
-     * An event carrying performance stats.
-     */
-    LONG_TASKS_STATS = 'statistics.long_tasks_stats'
 }
-
-// exported for backward compatibility
-export const AUDIO_LEVEL = Events.AUDIO_LEVEL;
-export const BEFORE_DISPOSED = Events.BEFORE_DISPOSED;
-export const BYTE_SENT_STATS = Events.BYTE_SENT_STATS;
-export const CONNECTION_STATS = Events.CONNECTION_STATS;
-export const ENCODE_TIME_STATS = Events.ENCODE_TIME_STATS;
-export const LONG_TASKS_STATS = Events.LONG_TASKS_STATS;

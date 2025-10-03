@@ -1,8 +1,11 @@
+import { getLogger } from '@jitsi/logger';
 import { $iq } from 'strophe.js';
 
 import JitsiParticipant from '../../JitsiParticipant';
 
 import { getSessionIdFromIq } from './recordingXMLUtils';
+
+const logger = getLogger('recording:JibriSession');
 
 export interface IJibriSessionOptions {
     connection?: any;
@@ -37,7 +40,7 @@ export interface IQOptions {
 export default class JibriSession {
     private _connection?: any;
     private _mode?: string;
-    private _jibriJid: string | null = null;
+    private _jibriJid: Nullable<string> = null;
     private _statusFromJicofo: string = '';
     private _sessionID?: string;
     private _status?: string;
@@ -65,18 +68,18 @@ export default class JibriSession {
     /**
      * Returns the error related to the session instance, if any.
      *
-     * @returns {string|undefined}
+     * @returns {Optional<string>}
      */
-    getError(): string | undefined {
+    getError(): Optional<string> {
         return this._error;
     }
 
     /**
      * Returns the session ID of the session instance.
      *
-     * @returns {string|undefined}
+     * @returns {Optional<string>}
      */
-    getID(): string | undefined {
+    getID(): Optional<string> {
         return this._sessionID;
     }
 
@@ -92,18 +95,18 @@ export default class JibriSession {
     /**
      * Returns the streaming URL of the session.
      *
-     * @returns {string|undefined}
+     * @returns {Optional<string>}
      */
-    getLiveStreamViewURL(): string | undefined {
+    getLiveStreamViewURL(): Optional<string> {
         return this._liveStreamViewURL;
     }
 
     /**
      * Returns the current status of the session.
      *
-     * @returns {string|undefined}
+     * @returns {Optional<string>}
      */
-    getStatus(): string | undefined {
+    getStatus(): Optional<string> {
         // If _status is not set fallback to the status reported by jicofo.
         if (this._status) {
             return this._status;
@@ -113,9 +116,9 @@ export default class JibriSession {
     }
 
     /**
-     * @returns {string|undefined} the JID of jibri associated with this session.
+     * @returns {Optional<string>}
      */
-    getJibriJid(): string | undefined {
+    getJibriJid(): Optional<string> {
         return this._jibriJid;
     }
 
@@ -184,7 +187,7 @@ export default class JibriSession {
      *
      * @param {*} jibriJid
      */
-    setJibriJid(jibriJid: string | null): void {
+    setJibriJid(jibriJid: Nullable<string>): void {
         this._jibriJid = jibriJid;
     }
 
@@ -209,21 +212,18 @@ export default class JibriSession {
     /**
      * Sends a message to start the actual recording.
      *
-     * @param {Object} options - Additional arguments for starting the
-     * recording.
-     * @param {string} [options.appData] - Data specific to the app/service that
-     * the result file will be uploaded.
-     * @param {string} [options.broadcastId] - The broadcast ID of an
-     * associated YouTube stream, used for knowing the URL from which the stream
-     * can be viewed.
-     * @param {string} options.focusMucJid - The JID of the focus participant
-     * that controls recording.
-     * @param {streamId} options.streamId - Necessary for live streaming, this
-     * is the stream key needed to start a live streaming session with the
-     * streaming service provider.
+     * @param {Object} options - Additional arguments for starting therecording.
+     * @param {string} [options.appData] - Data specific to the app/service that the result file will be uploaded.
+     * @param {string} [options.broadcastId] - The broadcast ID of an associated YouTube stream, used for knowing the
+     * URL from which the stream can be viewed.
+     * @param {string} options.focusMucJid - The JID of the focus participant that controls recording.
+     * @param {streamId} options.streamId - Necessary for live streaming, this is the stream key needed to start a live
+     * streaming session with the streaming service provider.
      * @returns Promise
      */
     start({ appData, broadcastId, focusMucJid, streamId }: IStartOptions): Promise<void> {
+        logger.info('Starting recording session');
+
         return new Promise((resolve, reject) => {
             this._connection?.sendIQ(
                 this._createIQ({
@@ -253,13 +253,13 @@ export default class JibriSession {
     /**
      * Sends a message to actually stop the recording session.
      *
-     * @param {Object} options - Additional arguments for stopping the
-     * recording.
-     * @param {Object} options.focusMucJid - The JID of the focus participant
-     * that controls recording.
+     * @param {Object} options - Additional arguments for stopping the recording.
+     * @param {Object} options.focusMucJid - The JID of the focus participant that controls recording.
      * @returns Promise
      */
     stop({ focusMucJid }: IStopOptions): Promise<any> {
+        logger.info('Stopping recording session');
+
         return new Promise((resolve, reject) => {
             this._connection?.sendIQ(
                 this._createIQ({

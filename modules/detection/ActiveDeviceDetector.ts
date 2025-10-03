@@ -1,6 +1,6 @@
 import { getLogger } from '@jitsi/logger';
 
-import * as JitsiTrackEvents from '../../JitsiTrackEvents';
+import { JitsiTrackEvents } from '../../JitsiTrackEvents';
 import JitsiLocalTrack from '../RTC/JitsiLocalTrack';
 import RTC from '../RTC/RTC';
 import Statistics from '../statistics/statistics';
@@ -10,7 +10,7 @@ export interface IActiveDeviceInfo {
     deviceLabel: string;
 }
 
-const logger = getLogger('modules/detection/ActiveDeviceDetector');
+const logger = getLogger('vad:ActiveDeviceDetector');
 
 // If after 3000 ms the detector did not find any active devices consider that there aren't any usable ones available
 // i.e. audioLevel > 0.008
@@ -71,7 +71,7 @@ export default function getActiveAudioDevice(): Promise<IActiveDeviceInfo> {
                             stopActiveDevices(availableDevices);
                             resolve({
                                 deviceId: device.deviceId,
-                                deviceLabel: device.track.label
+                                deviceLabel: device.getTrack().label
                             });
                         }
                     });

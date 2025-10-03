@@ -4,11 +4,11 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { generateUsername } from '../util/UsernameGenerator';
 
-const logger = getLogger('modules/settings/Settings');
+const logger = getLogger('settings:Settings');
 
-let _callStatsUserName: string | null = null;
+let _callStatsUserName: Nullable<string> = null;
 
-let _machineId: string | null = null;
+let _machineId: Nullable<string> = null;
 
 /**
  *

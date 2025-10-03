@@ -1,9 +1,9 @@
 import { getLogger } from '@jitsi/logger';
 import { cloneDeep, isEqual } from 'lodash-es';
 
-import * as JitsiConferenceEvents from '../../JitsiConferenceEvents';
+import { JitsiConferenceEvents } from '../../JitsiConferenceEvents';
 import { MediaType } from '../../service/RTC/MediaType';
-import RTCEvents from '../../service/RTC/RTCEvents';
+import { RTCEvents } from '../../service/RTC/RTCEvents';
 import { VideoType } from '../../service/RTC/VideoType';
 import browser from '../browser';
 import Listenable from '../util/Listenable';
@@ -15,7 +15,7 @@ import RTCUtils from './RTCUtils';
 import TraceablePeerConnection from './TraceablePeerConnection';
 
 
-const logger = getLogger('modules/RTC/RTC');
+const logger = getLogger('rtc:RTC');
 
 /**
  * The counter used to generated id numbers assigned to peer connections
@@ -733,6 +733,16 @@ export default class RTC extends Listenable {
     sendEndpointStatsMessage(payload) {
         if (this._channel && this._channel.isOpen()) {
             this._channel.sendEndpointStatsMessage(payload);
+        }
+    }
+
+    /**
+     * Sends a receiver audio subscription message.
+     * @param {*} message
+     */
+    sendReceiverAudioSubscriptionMessage(message) {
+        if (this._channel && this._channel.isOpen()) {
+            this._channel.sendReceiverAudioSubscriptionMessage(message);
         }
     }
 

@@ -949,6 +949,11 @@
   resolved "https://registry.yarnpkg.com/@jitsi/logger/-/logger-2.0.2.tgz#33491045e8c4b760df9c59e9885f401589f30c13"
   integrity sha512-qwbpRwuwkBFgh0F5jivq/5fAm46yVoXURc5LCklEs8lAShYVangFEXKW7RLpZuZ5nQnrHrlvU8MswQNREmvahg==
 
+"@jitsi/logger@2.1.1":
+  version "2.1.1"
+  resolved "https://registry.yarnpkg.com/@jitsi/logger/-/logger-2.1.1.tgz#79e5f114a47f51102de9d9e51f227d85d8dc0fb5"
+  integrity sha512-adMtODSXvYJtqfRuDwxN1hNWPJ4gvp868G7QXII3ajSgPaE2mMcbLYRHy6mZZlQJGnxr0dDaivOrvV6CikHZNQ==
+
 "@jitsi/precall-test@1.0.6":
   version "1.0.6"
   resolved "https://registry.yarnpkg.com/@jitsi/precall-test/-/precall-test-1.0.6.tgz#cdf7e4c49412c013a054b54486ad507a737adf07"
@@ -1166,10 +1171,10 @@
   dependencies:
     undici-types "~7.10.0"
 
-"@types/sdp-transform@2.4.5":
-  version "2.4.5"
-  resolved "https://registry.yarnpkg.com/@types/sdp-transform/-/sdp-transform-2.4.5.tgz#3167961e0a1a5265545e278627aa37c606003f53"
-  integrity sha512-GVO0gnmbyO3Oxm2HdPsYUNcyihZE3GyCY8ysMYHuQGfLhGZq89Nm4lSzULWTzZoyHtg+VO/IdrnxZHPnPSGnAg==
+"@types/sdp-transform@2.15.0":
+  version "2.15.0"
+  resolved "https://registry.yarnpkg.com/@types/sdp-transform/-/sdp-transform-2.15.0.tgz#f59a33ec631374794c2affc4c63ef60613285983"
+  integrity sha512-ikIFF0EaYt/2XetIYYVeMj6SB52oVXFasJUXDzWHgzNJS5ep2Pbsu7f8f3Za+dEie8HQtt3Zr9mHYBpWT0XgxQ==
 
 "@types/semver@^7.3.12":
   version "7.7.0"
@@ -1825,6 +1830,11 @@ callsites@^3.0.0:
   version "3.1.0"
   resolved "https://registry.yarnpkg.com/callsites/-/callsites-3.1.0.tgz#b3630abd8943432f54b3f0519238e33cd7df2f73"
   integrity sha512-P8BjAsXvZS+VIDUI11hHCQEv74YT67YUi5JJFNWIqL235sBmjX4+qx9Muvls5ivyNENctx46xQLQ3aTuE7ssaQ==
+
+camelcase@^8.0.0:
+  version "8.0.0"
+  resolved "https://registry.yarnpkg.com/camelcase/-/camelcase-8.0.0.tgz#c0d36d418753fb6ad9c5e0437579745c1c14a534"
+  integrity sha512-8WB3Jcas3swSvjIeA2yvCJ+Miyz5l1ZmB6HFb9R1317dt9LCQoswg/BGrmAmkWVEszSrrg4RwmO46qIm2OEnSA==
 
 caniuse-lite@^1.0.30001733:
   version "1.0.30001734"
@@ -4607,6 +4617,23 @@ typed-array-length@^1.0.7:
     is-typed-array "^1.1.13"
     possible-typed-array-names "^1.0.0"
     reflect.getprototypeof "^1.0.6"
+
+typedoc-plugin-missing-exports@4.1.0:
+  version "4.1.0"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-missing-exports/-/typedoc-plugin-missing-exports-4.1.0.tgz#e4c0697c7b44921366169fce219f858b2ebf79e6"
+  integrity sha512-p1M5jXnEbQ4qqy0erJz41BBZEDb8XDrbLjndlH4RhYEcymbdQr0xLF6yUw1GWBrhSIfkU98m3BELMAiQh+R1zA==
+
+typedoc-plugin-no-inherit@1.6.1:
+  version "1.6.1"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-no-inherit/-/typedoc-plugin-no-inherit-1.6.1.tgz#d0b2051dab933ab30a84652e7037106be3cbf648"
+  integrity sha512-+qf0RkO5YR9kUBBS1HqzzDOsWOnLcXTtGL0f2ia4jDQAjGrtF0+po/0R8k3UNtBqyDzL273aaV3FIGHEX+U/tg==
+
+typedoc-plugin-rename-defaults@0.7.3:
+  version "0.7.3"
+  resolved "https://registry.yarnpkg.com/typedoc-plugin-rename-defaults/-/typedoc-plugin-rename-defaults-0.7.3.tgz#3c046730de2c9dcb6003ddb8861ff2b87b9e82ca"
+  integrity sha512-fDtrWZ9NcDfdGdlL865GW7uIGQXlthPscURPOhDkKUe4DBQSRRFUf33fhWw41FLlsz8ZTeSxzvvuNmh54MynFA==
+  dependencies:
+    camelcase "^8.0.0"
 
 typedoc@0.28.1:
   version "0.28.1"

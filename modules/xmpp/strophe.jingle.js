@@ -10,7 +10,7 @@ import ConnectionPlugin from './ConnectionPlugin';
 import { expandSourcesFromJson } from './JingleHelperFunctions';
 import JingleSessionPC from './JingleSessionPC';
 
-const logger = getLogger('modules/xmpp/strophe.jingle');
+const logger = getLogger('xmpp:strophe.jingle');
 
 // XXX Strophe is build around the idea of chaining function calls so allow long
 // function call chains.
@@ -291,7 +291,7 @@ export default class JingleConnectionPlugin extends ConnectionPlugin {
      * @param reasonCondition
      * @param reasonText
      */
-    terminate(sid, reasonCondition, reasonText) {
+    terminate(sid, reasonCondition = undefined, reasonText = undefined) {
         if (this.sessions.hasOwnProperty(sid)) {
             if (this.sessions[sid].state !== 'ended') {
                 this.sessions[sid].onTerminated(reasonCondition, reasonText);
@@ -451,6 +451,7 @@ export default class JingleConnectionPlugin extends ConnectionPlugin {
 
     /**
      * Returns the data saved in 'updateLog' in a format to be logged.
+     * @returns {Record<string, unknown>} An object containing the data to be logged.
      */
     getLog() {
         const data = {};

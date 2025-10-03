@@ -1,7 +1,7 @@
 import EventEmitter from '../util/EventEmitter';
 import { calculateAverage } from '../util/MathUtil';
 
-import { DETECTOR_STATE_CHANGE, VAD_TALK_WHILE_MUTED } from './DetectionEvents';
+import { DetectionEvents } from './DetectionEvents';
 
 /**
  * The threshold which the average VAD values for a span of time needs to exceed to trigger an event.
@@ -30,7 +30,7 @@ const PROCESS_TIME_FRAME_SPAN_MS = 700;
 export interface IVADScore {
     deviceId: string;
     score: number;
-    timestamp: Date;
+    timestamp: number;
 }
 
 /**
@@ -76,7 +76,7 @@ export default class VADTalkMutedDetection extends EventEmitter {
         const score = calculateAverage(new Float32Array(this._scoreArray));
 
         if (score > VAD_AVG_THRESHOLD) {
-            this.emit(VAD_TALK_WHILE_MUTED);
+            this.emit(DetectionEvents.VAD_TALK_WHILE_MUTED);
 
             // Event was fired. Stop event emitter and remove listeners so no residue events kick off after this point
             // and a single VAD_TALK_WHILE_MUTED is generated per mic muted state.
@@ -95,7 +95,7 @@ export default class VADTalkMutedDetection extends EventEmitter {
      */
     private _setActiveState(active: boolean): void {
         this._active = active;
-        this.emit(DETECTOR_STATE_CHANGE, this._active);
+        this.emit(DetectionEvents.DETECTOR_STATE_CHANGE, this._active);
     }
 
     /**
@@ -122,7 +122,7 @@ export default class VADTalkMutedDetection extends EventEmitter {
      * Listens for {@link TrackVADEmitter} events and processes them.
      *
      * @param {Object} vadScore -VAD score emitted by {@link TrackVADEmitter}
-     * @param {Date}   vadScore.timestamp - Exact time at which processed PCM sample was generated.
+     * @param {number}   vadScore.timestamp - Exact time at which processed PCM sample was generated.
      * @param {number} vadScore.score - VAD score on a scale from 0 to 1 (i.e. 0.7)
      * @param {string} vadScore.deviceId - Device id of the associated track.
      * @listens VAD_SCORE_PUBLISHED

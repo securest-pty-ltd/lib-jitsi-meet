@@ -6,7 +6,7 @@ import ChatRoom from '../xmpp/ChatRoom';
 import JibriSession from './JibriSession';
 import { getFocusRecordingUpdate, getHiddenDomainUpdate, isFromFocus } from './recordingXMLUtils';
 
-const logger = getLogger('modules/recording/RecordingManager');
+const logger = getLogger('recording:RecordingManager');
 
 export interface IRecordingOptions {
     appData?: string;
@@ -50,9 +50,9 @@ class RecordingManager {
      * Finds an existing recording session by session ID.
      *
      * @param {string} sessionID - The session ID associated with the recording.
-     * @returns {JibriSession|undefined}
+     * @returns {Optional<JibriSession>}
      */
-    getSession(sessionID: string): JibriSession | undefined {
+    getSession(sessionID: string): Optional<JibriSession> {
         return this._sessions[sessionID];
     }
 
@@ -62,8 +62,8 @@ class RecordingManager {
      * @param {string} jibriJid the JID to search for.
      * @returns
      */
-    getSessionByJibriJid(jibriJid: string): JibriSession | undefined {
-        let s: JibriSession | undefined;
+    getSessionByJibriJid(jibriJid: string): Optional<JibriSession> {
+        let s: Optional<JibriSession>;
 
         Object.values(this._sessions).forEach(session => {
             if (session.getJibriJid() === jibriJid) {
@@ -274,6 +274,11 @@ class RecordingManager {
         }
 
         session.setStatusFromJicofo(status);
+
+        if (this._chatRoom.role === 'visitor') {
+            // visitors will not receive presence updates from jibri, so we handle their status here
+            session.setStatus(status);
+        }
 
         if (error) {
             session.setError(error);
